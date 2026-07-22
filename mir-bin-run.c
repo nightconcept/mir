@@ -1,8 +1,14 @@
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
+#ifdef _WIN32
+#define WIN32_LEAN_AND_MEAN
+#include <windows.h>
+#include <malloc.h>
+#else
 #include <alloca.h>
 #include <dlfcn.h>
+#endif
 #include <sys/stat.h>
 #include "mir-alloc-default.c"
 #include "mir-gen.h"  // mir.h gets included as well
@@ -134,6 +140,7 @@ static const char *lib_suffix = ".dll";
 #define dlopen(n, f) LoadLibrary (n)
 #define dlclose(h) FreeLibrary (h)
 #define dlsym(h, s) GetProcAddress (h, s)
+#define RTLD_LAZY 0
 #endif
 
 static void close_std_libs (void) {

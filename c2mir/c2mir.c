@@ -1157,7 +1157,7 @@ static void set_string_val (c2m_ctx_t c2m_ctx, token_t t, VARR (char) * temp, in
           && str[start] == str[str_len - 1]);
   for (i = start + 1; i < str_len - 1; i++) {
     if (!string_p && last_c >= 0 && !pre_skip_if_part_p (c2m_ctx))
-      error (c2m_ctx, t->pos, "multibyte character");
+      (c2m_options->pedantic_p ? error : warning) (c2m_ctx, t->pos, "multi-character constant");
     last_c = curr_c = (unsigned char) str[i];
     if (curr_c != '\\') {
       push_str_char (temp, curr_c, type);
@@ -4364,7 +4364,9 @@ D (asm_spec) {
   node_t r, id;
 
   PTN (T_ID);
-  if (strcmp (r->u.s.s, "__asm") != 0 && strcmp (r->u.s.s, "asm") != 0) PTFAIL (T_ID);
+  if (strcmp (r->u.s.s, "__asm") != 0 && strcmp (r->u.s.s, "asm") != 0
+      && strcmp (r->u.s.s, "__asm__") != 0)
+    PTFAIL (T_ID);
   id = r;
   PT ('(');
   PTN (T_STR);
@@ -8479,7 +8481,7 @@ static const char *check_attrs (c2m_ctx_t c2m_ctx, node_t r, decl_t decl, node_t
 #define BUILTIN_VA_ARG \
   (const char *[]) { "__builtin_va_arg", NULL }
 #define ALLOCA \
-  (const char *[]) { "alloca", "__builtin_alloca", NULL }
+  (const char *[]) { "alloca", "_alloca", "__builtin_alloca", NULL }
 
 static int str_eq_p (const char *str, const char *v[]) {
   for (int i = 0; v[i] != NULL; i++)
@@ -9273,7 +9275,8 @@ static void check (c2m_ctx_t c2m_ctx, node_t r, node_t context) {
       }
       ret_type = &res_type;
       if (builtin_call_p
-          && ((va_start_p && NL_LENGTH (arg_list->u.ops) != 1)
+          && ((va_start_p && NL_LENGTH (arg_list->u.ops) != 1
+               && NL_LENGTH (arg_list->u.ops) != 2)
               || (alloca_p && NL_LENGTH (arg_list->u.ops) != 1)
               || (add_overflow_p && NL_LENGTH (arg_list->u.ops) != 3)
               || (sub_overflow_p && NL_LENGTH (arg_list->u.ops) != 3)
@@ -12920,6 +12923,13 @@ static op_t gen (c2m_ctx_t c2m_ctx, node_t r, MIR_label_t true_label, MIR_label_
     if (va_arg_p) {
       op1 = get_new_temp (c2m_ctx, MIR_T_I64);
       op2 = val_gen (c2m_ctx, NL_HEAD (args->u.ops));
+#ifdef _WIN32
+      if (op2.mir_op.mode == MIR_OP_REG) {
+        op_t addr_op = get_new_temp (c2m_ctx, MIR_T_I64);
+        emit2 (c2m_ctx, MIR_ADDR, addr_op.mir_op, op2.mir_op);
+        op2 = addr_op;
+      }
+#endif
       if (op2.mir_op.mode == MIR_OP_MEM) {
 #ifndef _WIN32
         if (op2.mir_op.u.mem.type == MIR_T_UNDEF)
@@ -12968,6 +12978,13 @@ static op_t gen (c2m_ctx_t c2m_ctx, node_t r, MIR_label_t true_label, MIR_label_
       }
     } else if (va_start_p) {
       op1 = val_gen (c2m_ctx, NL_HEAD (args->u.ops));
+#ifdef _WIN32
+      if (op1.mir_op.mode == MIR_OP_REG) {
+        op_t addr_op = get_new_temp (c2m_ctx, MIR_T_I64);
+        emit2 (c2m_ctx, MIR_ADDR, addr_op.mir_op, op1.mir_op);
+        op1 = addr_op;
+      }
+#endif
       if (op1.mir_op.mode == MIR_OP_MEM) {
 #ifndef _WIN32
         if (op1.mir_op.u.mem.type == MIR_T_UNDEF)
@@ -14141,8 +14158,24 @@ static void init_include_dirs (c2m_ctx_t c2m_ctx) {
 #endif
 #ifdef ADDITIONAL_INCLUDE_PATH
   if (ADDITIONAL_INCLUDE_PATH[0] != 0) {
+#ifdef _WIN32
+    const char sep = ';';
+#else
+    const char sep = ':';
+#endif
+    const char *p = ADDITIONAL_INCLUDE_PATH;
     added_p = TRUE;
-    VARR_PUSH (char_ptr_t, system_headers, ADDITIONAL_INCLUDE_PATH);
+    while (*p != 0) {
+      const char *e = p;
+      while (*e != 0 && *e != sep) e++;
+      if (e != p) {
+        char *dir = MIR_malloc (alloc, (size_t) (e - p) + 1);
+        memcpy (dir, p, (size_t) (e - p));
+        dir[e - p] = 0;
+        VARR_PUSH (char_ptr_t, system_headers, dir);
+      }
+      p = *e == sep ? e + 1 : e;
+    }
   }
 #endif
 #if defined(__APPLE__)

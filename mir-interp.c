@@ -1549,7 +1549,12 @@ common_addr:;
       MIR_item_t proto_item = get_a (ops + 3);
       size_t start = proto_item->u.proto->nres + 5;
       bp[-2].a = pc;
+#ifdef _WIN32
+      res = ((int (*) (void *, void *)) func_addr) (*get_aop (bp, ops + start),
+                                                    *get_aop (bp, ops + start + 1));
+#else
       res = (*func_addr) (*get_aop (bp, ops + start));
+#endif
       ops = pc = bp[-2].a;
       nops = get_i (ops);
       bp[get_i (ops + 5)].i = res;
@@ -1568,7 +1573,12 @@ common_addr:;
       MIR_item_t proto_item = get_a (ops + 3);
       size_t start = proto_item->u.proto->nres + 5;
       bp[-2].a = pc;
+#ifdef _WIN32
+      res = ((int (*) (void *, void *)) func_addr) (*get_aop (bp, ops + start),
+                                                    *get_aop (bp, ops + start + 1));
+#else
       res = (*func_addr) (*get_aop (bp, ops + start));
+#endif
       ops = pc = bp[-2].a;
       nops = get_i (ops);
       bp[get_i (ops + 5)].i = res;

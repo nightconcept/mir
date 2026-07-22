@@ -173,9 +173,19 @@ static const char *lib_suffix = ".dylib";
 #endif
 
 #ifdef _WIN32
+static const union {
+  uint32_t bits;
+  float value;
+} c2m_inff = {0x7f800000};
+static const union {
+  uint64_t bits;
+  double value;
+} c2m_infl = {0x7ff0000000000000ULL}, c2m_qnan = {0x7ff8000000000000ULL};
+
 static lib_t std_libs[] = {{"C:\\Windows\\System32\\msvcrt.dll", NULL},
                            {"C:\\Windows\\System32\\kernel32.dll", NULL},
-                           {"C:\\Windows\\System32\\ucrtbase.dll", NULL}};
+                           {"C:\\Windows\\System32\\ucrtbase.dll", NULL},
+                           {"libwinpthread-1.dll", NULL}};
 static const char *std_lib_dirs[] = {"C:\\Windows\\System32"};
 static const char *lib_suffix = ".dll";
 #define dlopen(n, f) LoadLibrary (n)
@@ -453,6 +463,9 @@ float __nan (void) {
 
 static void *import_resolver (const char *name) {
   void *handler, *sym = NULL;
+#ifdef _WIN32
+  static void *huge_import;
+#endif
 
   for (size_t i = 0; i < sizeof (std_libs) / sizeof (struct lib); i++)
     if ((handler = std_libs[i].handler) != NULL && (sym = dlsym (handler, name)) != NULL) break;
@@ -466,6 +479,35 @@ static void *import_resolver (const char *name) {
     if (strcmp (name, "LoadLibrary") == 0) return LoadLibrary;
     if (strcmp (name, "FreeLibrary") == 0) return FreeLibrary;
     if (strcmp (name, "GetProcAddress") == 0) return GetProcAddress;
+    if (strcmp (name, "__INFF") == 0) return (void *) &c2m_inff;
+    if (strcmp (name, "__INFL") == 0) return (void *) &c2m_infl;
+    if (strcmp (name, "__QNANF") == 0) return (void *) &c2m_qnan;
+    if (strcmp (name, "__imp__HUGE") == 0) {
+      for (size_t i = 0; i < sizeof (std_libs) / sizeof (struct lib); i++)
+        if ((handler = std_libs[i].handler) != NULL
+            && (huge_import = dlsym (handler, "_HUGE")) != NULL)
+          return &huge_import;
+    }
+#ifdef __MINGW32__
+    if (strcmp (name, "__mingw_vsnprintf") == 0) return __mingw_vsnprintf;
+    if (strcmp (name, "__mingw_vsprintf") == 0) return __mingw_vsprintf;
+    if (strcmp (name, "__mingw_vsnwprintf") == 0) return __mingw_vsnwprintf;
+    if (strcmp (name, "__mingw_vswprintf") == 0) return __mingw_vswprintf;
+    if (strcmp (name, "__mingw_vprintf") == 0) return __mingw_vprintf;
+    if (strcmp (name, "__mingw_vfprintf") == 0) return __mingw_vfprintf;
+    if (strcmp (name, "__mingw_vsscanf") == 0) return __mingw_vsscanf;
+    if (strcmp (name, "__mingw_vfscanf") == 0) return __mingw_vfscanf;
+    if (strcmp (name, "__mingw_strtof") == 0) return __mingw_strtof;
+    if (strcmp (name, "__mingw_strtod") == 0) return __mingw_strtod;
+    if (strcmp (name, "__mingw_strtold") == 0) return __mingw_strtold;
+    if (strcmp (name, "__mingw_wcstof") == 0) return __mingw_wcstof;
+    if (strcmp (name, "__mingw_wcstod") == 0) return __mingw_wcstod;
+    if (strcmp (name, "__mingw_wcstold") == 0) return __mingw_wcstold;
+    if (strcmp (name, "snprintf") == 0) return snprintf;
+    if (strcmp (name, "vsnprintf") == 0) return vsnprintf;
+    if (strcmp (name, "__ms_snprintf") == 0) return snprintf;
+    if (strcmp (name, "__ms_vsnprintf") == 0) return vsnprintf;
+#endif
 #else
     if (strcmp (name, "dlopen") == 0) return dlopen;
     if (strcmp (name, "dlerror") == 0) return dlerror;
@@ -724,9 +766,54 @@ static void sort_modules (MIR_context_t ctx) {
 }
 #endif
 
+#ifdef _WIN32
+static LONG WINAPI c2m_crash_filter (EXCEPTION_POINTERS *ep) {
+  EXCEPTION_RECORD *er = ep->ExceptionRecord;
+  CONTEXT *ctx = ep->ContextRecord;
+  DWORD code = er->ExceptionCode;
+  if (code != EXCEPTION_ACCESS_VIOLATION && code != EXCEPTION_ILLEGAL_INSTRUCTION
+      && code != EXCEPTION_STACK_OVERFLOW && code != EXCEPTION_DATATYPE_MISALIGNMENT
+      && code != EXCEPTION_IN_PAGE_ERROR)
+    return EXCEPTION_CONTINUE_SEARCH;
+  fprintf (stderr, "\n*** c2m crash: exception 0x%08lx at rip=%p\n", (unsigned long) code,
+           er->ExceptionAddress);
+  if ((code == EXCEPTION_ACCESS_VIOLATION || code == EXCEPTION_IN_PAGE_ERROR)
+      && er->NumberParameters >= 2) {
+    ULONG_PTR op = er->ExceptionInformation[0], addr = er->ExceptionInformation[1];
+    fprintf (stderr, "    %s fault addr=0x%p  (addr%%16=%u)\n",
+             op == 0 ? "read" : op == 1 ? "write" : op == 8 ? "exec" : "?",
+             (void *) addr, (unsigned) (addr % 16));
+  }
+  fprintf (stderr, "    rsp=%p (rsp%%16=%u)  rbp=%p\n", (void *) ctx->Rsp,
+           (unsigned) (ctx->Rsp % 16), (void *) ctx->Rbp);
+  {
+    unsigned char *rip = (unsigned char *) er->ExceptionAddress;
+    MEMORY_BASIC_INFORMATION mbi;
+    if (VirtualQuery (rip, &mbi, sizeof mbi) && mbi.State == MEM_COMMIT
+        && (mbi.Protect & (PAGE_EXECUTE | PAGE_EXECUTE_READ | PAGE_EXECUTE_READWRITE
+                           | PAGE_READONLY | PAGE_READWRITE))) {
+      HMODULE mod = NULL;
+      char name[MAX_PATH] = "<jit/anon>";
+      fprintf (stderr, "    insn:");
+      for (int b = 0; b < 16; b++) fprintf (stderr, " %02x", rip[b]);
+      if (GetModuleHandleExA (GET_MODULE_HANDLE_EX_FLAG_FROM_ADDRESS
+                                | GET_MODULE_HANDLE_EX_FLAG_UNCHANGED_REFCOUNT,
+                              (LPCSTR) rip, &mod))
+        GetModuleFileNameA (mod, name, sizeof name);
+      fprintf (stderr, "\n    rip in: %s\n", name);
+    }
+  }
+  fflush (stderr);
+  return EXCEPTION_CONTINUE_SEARCH;
+}
+#endif
+
 int main (int argc, char *argv[], char *env[]) {
   int i, bin_p;
   size_t len;
+#ifdef _WIN32
+  AddVectoredExceptionHandler (0, c2m_crash_filter);
+#endif
 
   interp_exec_p = gen_exec_p = lazy_gen_exec_p = lazy_bb_gen_exec_p = FALSE;
   VARR_CREATE (void_ptr_t, allocated, &default_alloc, 100);

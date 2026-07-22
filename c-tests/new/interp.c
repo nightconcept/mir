@@ -1,8 +1,9 @@
 #include <stdio.h>
+#include <stdint.h>
 /* simple interpreter and execution of program i=0;while (i <= 1000000) { i+=1; } print i; exit 0 */
 enum insn_id { MOVI, ADDI, JMP, BGI, PRINT, EXITI };
 static int insn_len[] = {3, 4, 2, 4, 2, 2};
-typedef long unsigned VALUE;
+typedef uintptr_t VALUE;
 static int eval (VALUE *program, size_t program_len, VALUE *bp) {
   static void *labels[] = {&&L_MOVI, &&L_ADDI, &&L_JMP, &&L_BGI, &&L_PRINT, &&L_EXITI};
   if (program_len > 0) {

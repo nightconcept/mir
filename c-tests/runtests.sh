@@ -2,9 +2,11 @@
 # Run runtests.sh execution_program
 #
 
-outf=__c-tests-temp.out
-stderrf=__c-tests-temp.stderr
-errf=__c-tests-temp.err
+temp_dir=`mktemp -d "${TMPDIR:-/tmp}/mir-c-tests.XXXXXX"` || exit 1
+trap 'rm -rf "$temp_dir"' EXIT HUP INT TERM
+outf=$temp_dir/out
+stderrf=$temp_dir/stderr
+errf=$temp_dir/err
 all=0
 ok=0
 ctest_dir=`dirname $0`
@@ -33,6 +35,10 @@ if arch >/dev/null 2>&1;then
 else
     ARCH="other"
 fi
+PLATFORMS=$ARCH
+case `uname -s` in
+    MINGW*|MSYS*|CYGWIN*) PLATFORMS="$PLATFORMS windows" ;;
+esac
 
 # busybox diff (e.g. on Alpine) lacks --strip-trailing-cr
 if diff --strip-trailing-cr /dev/null /dev/null >/dev/null 2>&1;then
@@ -55,7 +61,13 @@ runtest () {
 	add_main=$2
 	all=`expr $all + 1`
 	$ECHO -n $t:
-	if test -f $t.disable && $GREP -F "$ARCH" $t.disable >/dev/null 2>&1; then $ECHO Skipped; return; fi
+	if test -f $t.disable; then
+	    for platform in $PLATFORMS; do
+		if $GREP -Fx "$platform" $t.disable >/dev/null 2>&1; then
+		    $ECHO Skipped; return
+		fi
+	    done
+	fi
 	if test -f $t.expectrc; then expect_code=`cat $t.expectrc`; else expect_code=0; fi
 	if test -f $t.expect; then expect_out=$t.expect; else expect_out=; fi
 	if test -f $t.stderr-expect; then stderr_expect_out=$t.stderr-expect; else stderr_expect_out=; fi
@@ -115,4 +127,3 @@ do
 done
 
 $ECHO Tests $all, Success tests $ok
-rm -f $outf $stderrf $errf

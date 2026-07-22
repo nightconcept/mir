@@ -21,7 +21,7 @@ static char stdarg_str[]
 #endif
     "\n"
 #if defined(__WIN32)
-    "#define va_start(ap, param) __va_start (ap, param)\n"
+    "#define va_start(ap, param) __builtin_va_start (ap, param)\n"
 #else
     "#define va_start(ap, param) __builtin_va_start (ap)\n"
 #endif
