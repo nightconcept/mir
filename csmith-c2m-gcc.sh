@@ -10,9 +10,9 @@ trap_ctrlc() {
 
 trap trap_ctrlc INT
 
-if type timeout >/dev/null 2>&1;then
+if timeout --version >/dev/null 2>&1;then
     TIMEOUT="timeout 10s"
-elif type gtimeout >/dev/null 2>&1;then
+elif gtimeout --version >/dev/null 2>&1;then
     TIMEOUT="gtimeout 10s"
 else
     TIMEOUT=

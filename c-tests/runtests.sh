@@ -23,9 +23,9 @@ elif test -x /bin/echo;then
   ECHO=/bin/echo
 fi
 
-if type timeout >/dev/null 2>&1;then
+if timeout --version >/dev/null 2>&1;then
     TIMEOUT="timeout 30s"
-elif type gtimeout >/dev/null 2>&1;then
+elif gtimeout --version >/dev/null 2>&1;then
     TIMEOUT="gtimeout 30s"
 else
     TIMEOUT=
