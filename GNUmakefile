@@ -25,12 +25,28 @@ ifeq ($(OS),Windows_NT)
     endif
   endif
   ifeq ($(CC),gcc)
+    # mingw's own headers (stdio.h, stdlib.h, ...) live next to gcc.exe, not
+    # in any path c2mir.c searches by default (init_include_dirs only knows
+    # __APPLE__/__unix__ default locations) -- without this, c2m compiling
+    # any C source that includes system headers (e.g. the bootstrap tests,
+    # which recompile MIR's own .c files through c2m) can't find them.
+    # Derive mingw-w64's public system-header directory from GCC's private
+    # include directory.  Do not expose the private directory to c2m: modern
+    # GCC intrinsic headers use compiler-only syntax that c2m does not parse.
+    # c2m supplies the one private header needed by <malloc.h>, mm_malloc.h.
+    GCC_INCLUDE_DIR := $(shell gcc -print-file-name=include)
+    ADDITIONAL_INCLUDE_PATH := $(GCC_INCLUDE_DIR)/../../../../../include
     CFLAGS += -fPIC -g -std=gnu11 -Wno-abi -fsigned-char
     CFLAGS += -fno-tree-sra
     COPTFLAGS = -O3 -DNDEBUG
     CDEBFLAGS =
     CDEB2FLAGS = -Wall -Wextra -g3 -dwarf4 -fsanitize=address -fsanitize=undefined -fno-sanitize=alignment
     CFLAGS += $(COPTFLAGS)
+    ifneq ($(ADDITIONAL_INCLUDE_PATH),)
+      # single-quote the whole -D so the ';' path separator is not seen by the
+      # shell as a command terminator; the inner "" makes it a C string literal
+      CFLAGS += '-DADDITIONAL_INCLUDE_PATH="$(ADDITIONAL_INCLUDE_PATH)"'
+    endif
     LDFLAGS=-Wl,--stack,8388608
     LD2FLAGS= $(LDFLAGS)
     MIR_LIBS=-lm -lkernel32 -lpsapi
@@ -121,6 +137,12 @@ endif
 
 C2M_BOOTSTRAP_FLAGS = -DMIR_BOOTSTRAP
 C2M_BOOTSTRAP_FLAGS0 := $(C2M_BOOTSTRAP_FLAGS)
+ifeq ($(OS),Windows_NT)
+  ifeq ($(CC),gcc)
+    C2M_BOOTSTRAP_FLAGS += '-DADDITIONAL_INCLUDE_PATH="$(ADDITIONAL_INCLUDE_PATH)"'
+    C2M_BOOTSTRAP_FLAGS0 += '-DADDITIONAL_INCLUDE_PATH="$(ADDITIONAL_INCLUDE_PATH)"'
+  endif
+endif
 ifeq ($(shell sh $(SRC_DIR)/check-threads.sh), ok)
   ifneq ($(CC),cl)
     MIR_LIBS += -lpthread
@@ -141,7 +163,7 @@ EXECUTABLES=$(BUILD_DIR)/c2m$(EXE) $(BUILD_DIR)/m2b$(EXE) $(BUILD_DIR)/b2m$(EXE)
 Q=@
 
 # Entries should be used for building and installation
-.PHONY: all debug install uninstall clean test bench
+.PHONY: all debug install uninstall clean test bench test-all
 
 all: $(BUILD_DIR)/libmir.$(LIBSUFF) $(BUILD_DIR)/$(SOLIB) $(EXECUTABLES)
 
@@ -655,12 +677,12 @@ c2mir-bootstrap-test: $(BUILD_DIR)/c2m$(EXE)
 c2mir-bb-bootstrap-test: $(BUILD_DIR)/c2m$(EXE)
 	$(Q) echo -n +++++++ C2MIR Bootstrap lazy bb test with default optimize level '... '
 	$(Q) $(BUILD_DIR)/c2m$(EXE) -w $(C2M_BOOTSTRAP_FLAGS) -I$(SRC_DIR) $(SRC_DIR)/mir-gen.c $(SRC_DIR)/c2mir/c2mir.c\
-	                    $(SRC_DIR)/c2mir/c2mir-driver.c $(SRC_DIR)/mir.c -o $(BUILD_DIR)/1o2.bmir
-	$(Q) $(BUILD_DIR)/c2m$(EXE) $(C2M_BOOTSTRAP_FLAGS) $(BUILD_DIR)/1o2.bmir -p4 -eb -w $(C2M_BOOTSTRAP_FLAGS)\
+	                    $(SRC_DIR)/c2mir/c2mir-driver.c $(SRC_DIR)/mir.c -o $(BUILD_DIR)/1bb2.bmir
+	$(Q) $(BUILD_DIR)/c2m$(EXE) $(C2M_BOOTSTRAP_FLAGS) $(BUILD_DIR)/1bb2.bmir -p4 -eb -w $(C2M_BOOTSTRAP_FLAGS)\
 	                    -I$(SRC_DIR) $(SRC_DIR)/mir-gen.c $(SRC_DIR)/c2mir/c2mir.c\
-			     $(SRC_DIR)/c2mir/c2mir-driver.c $(SRC_DIR)/mir.c -o $(BUILD_DIR)/2o2.bmir
-	$(Q) cmp $(BUILD_DIR)/1o2.bmir $(BUILD_DIR)/2o2.bmir && echo Passed || echo FAIL
-	$(Q) rm -rf $(BUILD_DIR)/1o2.bmir $(BUILD_DIR)/2o2.bmir
+			     $(SRC_DIR)/c2mir/c2mir-driver.c $(SRC_DIR)/mir.c -o $(BUILD_DIR)/2bb2.bmir
+	$(Q) cmp $(BUILD_DIR)/1bb2.bmir $(BUILD_DIR)/2bb2.bmir && echo Passed || echo FAIL
+	$(Q) rm -rf $(BUILD_DIR)/1bb2.bmir $(BUILD_DIR)/2bb2.bmir
 
 c2mir-bootstrap-test3: $(BUILD_DIR)/c2m$(EXE)
 	$(Q) echo -n +++++++ C2MIR Bootstrap lazy func test with -O3 '... '

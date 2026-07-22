@@ -1,0 +1,7 @@
+# dev tool pins for this repo. Install with `mise install` (see https://mise.jdx.dev).
+#
+# The actual C toolchain (gcc/clang, make, cmake) isn't managed here -- README's
+# only stated requirement is a working system compiler/make, which mise doesn't
+# provide; this just pins the task runner used by the justfile.
+[tools]
+just = "latest"

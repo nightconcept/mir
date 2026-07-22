@@ -1,0 +1,8 @@
+# MIR text IR fixtures and the c-tests suite are read byte-for-byte by
+# mir.c's own text scanner and by c-tests/runtests.sh's output diffing;
+# CRLF line endings (e.g. from a Windows checkout with core.autocrlf=true)
+# break the MIR scanner ("wrong char after ...") and skew fixture diffs.
+# Keep everything under these paths as LF regardless of platform checkout
+# settings, so all three CI platforms compare apples to apples.
+*.mir text eol=lf
+c-tests/** text eol=lf

@@ -1,0 +1,51 @@
+name: multi-os-test
+
+on:
+  push:
+    branches: [dev]
+  workflow_dispatch:
+
+jobs:
+  test:
+
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - os: ubuntu-latest
+            arch: x86_64
+          - os: windows-latest
+            arch: x86_64
+          - os: macos-latest
+            arch: arm64
+    runs-on: ${{ matrix.os }}
+    name: ${{ matrix.arch }} ${{ matrix.os }}
+
+    steps:
+    - uses: actions/checkout@v4
+    - name: make test
+      if: runner.os != 'Windows'
+      run: make test
+    - name: cmake test
+      if: runner.os == 'Windows'
+      run: |
+        cmake -A x64 -DBUILD_TESTING=ON
+        cmake --build . --config Release
+        ctest --verbose --output-on-failure
+    - name: setup msys2 (windows parity)
+      if: runner.os == 'Windows'
+      uses: msys2/setup-msys2@v2
+      id: msys2
+      with:
+        msystem: MINGW64
+        update: false
+        install: >-
+          mingw-w64-x86_64-gcc
+          make
+          diffutils
+    - name: make test (mingw windows)
+      if: runner.os == 'Windows'
+      shell: pwsh
+      env:
+        MSYS2_ROOT: ${{ steps.msys2.outputs.msys2-location }}
+      run: python scripts/win-test.py --keep-going

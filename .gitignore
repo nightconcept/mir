@@ -1,5 +1,6 @@
 *.o
 *.d
+*.exe
 /b2ctab
 /b2m
 /c2m
@@ -9,4 +10,6 @@
 *.a
 /mir-run
 /build
+/out
+/.test-runs
 /.cache

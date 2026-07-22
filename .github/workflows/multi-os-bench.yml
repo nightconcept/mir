@@ -1,4 +1,4 @@
-name: AMD64-Linux-bench
+name: multi-os-bench
 
 on: [workflow_dispatch]
 #  schedule:
@@ -10,10 +10,15 @@ jobs:
 
     strategy:
       matrix:
-        os: [ubuntu-latest, macos-latest]
+        include:
+          - os: ubuntu-latest
+            arch: x86_64
+          - os: macos-latest
+            arch: arm64
     runs-on: ${{ matrix.os }}
-    
+    name: ${{ matrix.arch }} ${{ matrix.os }}
+
     steps:
-    - uses: actions/checkout@v1
+    - uses: actions/checkout@v4
     - name: make bench
       run: make bench
