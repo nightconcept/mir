@@ -14169,7 +14169,7 @@ static void init_include_dirs (c2m_ctx_t c2m_ctx) {
       const char *e = p;
       while (*e != 0 && *e != sep) e++;
       if (e != p) {
-        char *dir = MIR_malloc (alloc, (size_t) (e - p) + 1);
+        char *dir = reg_malloc (c2m_ctx, (size_t) (e - p) + 1);
         memcpy (dir, p, (size_t) (e - p));
         dir[e - p] = 0;
         VARR_PUSH (char_ptr_t, system_headers, dir);

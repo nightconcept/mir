@@ -3,7 +3,8 @@
 #
 
 temp_dir=`mktemp -d "${TMPDIR:-/tmp}/mir-c-tests.XXXXXX"` || exit 1
-trap 'rm -rf "$temp_dir"' EXIT HUP INT TERM
+trap 'rm -rf "$temp_dir"' EXIT
+trap 'rm -rf "$temp_dir"; exit 1' HUP INT TERM
 outf=$temp_dir/out
 stderrf=$temp_dir/stderr
 errf=$temp_dir/err

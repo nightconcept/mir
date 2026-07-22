@@ -789,13 +789,17 @@ static LONG WINAPI c2m_crash_filter (EXCEPTION_POINTERS *ep) {
   {
     unsigned char *rip = (unsigned char *) er->ExceptionAddress;
     MEMORY_BASIC_INFORMATION mbi;
-    if (VirtualQuery (rip, &mbi, sizeof mbi) && mbi.State == MEM_COMMIT
-        && (mbi.Protect & (PAGE_EXECUTE | PAGE_EXECUTE_READ | PAGE_EXECUTE_READWRITE
-                           | PAGE_READONLY | PAGE_READWRITE))) {
+    if (code != EXCEPTION_STACK_OVERFLOW && VirtualQuery (rip, &mbi, sizeof mbi)
+        && mbi.State == MEM_COMMIT && !(mbi.Protect & PAGE_GUARD)
+        && (mbi.Protect
+            & (PAGE_EXECUTE | PAGE_EXECUTE_READ | PAGE_EXECUTE_READWRITE | PAGE_READONLY
+               | PAGE_READWRITE))) {
       HMODULE mod = NULL;
       char name[MAX_PATH] = "<jit/anon>";
+      size_t avail = (size_t) ((unsigned char *) mbi.BaseAddress + mbi.RegionSize - rip);
+      int n = avail < 16 ? (int) avail : 16;
       fprintf (stderr, "    insn:");
-      for (int b = 0; b < 16; b++) fprintf (stderr, " %02x", rip[b]);
+      for (int b = 0; b < n; b++) fprintf (stderr, " %02x", rip[b]);
       if (GetModuleHandleExA (GET_MODULE_HANDLE_EX_FLAG_FROM_ADDRESS
                                 | GET_MODULE_HANDLE_EX_FLAG_UNCHANGED_REFCOUNT,
                               (LPCSTR) rip, &mod))

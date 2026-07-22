@@ -1550,8 +1550,13 @@ common_addr:;
       size_t start = proto_item->u.proto->nres + 5;
       bp[-2].a = pc;
 #ifdef _WIN32
-      res = ((int (*) (void *, void *)) func_addr) (*get_aop (bp, ops + start),
-                                                    *get_aop (bp, ops + start + 1));
+      {
+        VARR (MIR_var_t) *setjmp_args = proto_item->u.proto->args;
+        size_t setjmp_nargs = setjmp_args == NULL ? 0 : VARR_LENGTH (MIR_var_t, setjmp_args);
+        void *sj_env = *get_aop (bp, ops + start);
+        void *sj_frame = setjmp_nargs > 1 ? *get_aop (bp, ops + start + 1) : NULL;
+        res = ((int (*) (void *, void *)) func_addr) (sj_env, sj_frame);
+      }
 #else
       res = (*func_addr) (*get_aop (bp, ops + start));
 #endif
@@ -1574,8 +1579,13 @@ common_addr:;
       size_t start = proto_item->u.proto->nres + 5;
       bp[-2].a = pc;
 #ifdef _WIN32
-      res = ((int (*) (void *, void *)) func_addr) (*get_aop (bp, ops + start),
-                                                    *get_aop (bp, ops + start + 1));
+      {
+        VARR (MIR_var_t) *setjmp_args = proto_item->u.proto->args;
+        size_t setjmp_nargs = setjmp_args == NULL ? 0 : VARR_LENGTH (MIR_var_t, setjmp_args);
+        void *sj_env = *get_aop (bp, ops + start);
+        void *sj_frame = setjmp_nargs > 1 ? *get_aop (bp, ops + start + 1) : NULL;
+        res = ((int (*) (void *, void *)) func_addr) (sj_env, sj_frame);
+      }
 #else
       res = (*func_addr) (*get_aop (bp, ops + start));
 #endif
