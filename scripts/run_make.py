@@ -93,8 +93,8 @@ def main() -> None:
         make_command = [
             "make",
             "-f",
-            str(REPO_ROOT / "GNUmakefile"),
-            f"SRC_DIR={REPO_ROOT}",
+            str(REPO_ROOT / "src" / "GNUmakefile"),
+            f"SRC_DIR={REPO_ROOT / 'src'}",
             args.target,
         ]
         if args.summary:

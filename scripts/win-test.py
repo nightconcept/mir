@@ -84,8 +84,8 @@ def main():
         f'export PATH="{":".join(path_entries)}"; '
         f'export CC=gcc; '
         f'cd "{to_msys_path(build_dir)}" && '
-        f'make -f "{to_msys_path(REPO_ROOT / "GNUmakefile")}" '
-        f'SRC_DIR="{to_msys_path(REPO_ROOT)}" -j{args.jobs}{keep_going} {args.target}'
+        f'make -f "{to_msys_path(REPO_ROOT / "src" / "GNUmakefile")}" '
+        f'SRC_DIR="{to_msys_path(REPO_ROOT / "src")}" -j{args.jobs}{keep_going} {args.target}'
     )
 
     print(f"+ {bash} -lc '{inner_cmd}'", flush=True)

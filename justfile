@@ -45,3 +45,20 @@ clean:
 # remove every isolated test run and its logs
 clean-all-tests:
     python scripts/run_make.py --clean-all-tests
+
+# zig build (see build.zig), current host platform only -- distinct from `just build` (make)
+zbuild:
+    zig build
+
+# run the zig build's test suite natively (`zig build test`)
+zbuild-test:
+    zig build test
+
+# cross-compile the zig build for all 3 CI platforms (linux/windows/macos) from this host,
+# one artifact tree per target triple under zig-out/<triple>/ -- can't run zbuild-test against
+# these since cross-compiled binaries don't execute on the host
+zbuild-all:
+    for triple in x86_64-linux-gnu x86_64-windows-gnu aarch64-macos; do \
+        echo "=== zig build -Dtarget=$triple ==="; \
+        zig build -Dtarget=$triple --prefix zig-out/$triple || exit 1; \
+    done

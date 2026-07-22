@@ -2,6 +2,8 @@
 #
 # The actual C toolchain (gcc/clang, make, cmake) isn't managed here -- README's
 # only stated requirement is a working system compiler/make, which mise doesn't
-# provide; this just pins the task runner used by the justfile.
+# provide; this just pins the task runner used by the justfile. zig is pinned
+# here since it's the compiler for the parallel build.zig route (`just zbuild`).
 [tools]
 just = "latest"
+zig = "0.16.0"

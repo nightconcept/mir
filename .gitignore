@@ -13,3 +13,5 @@
 /out
 /.test-runs
 /.cache
+/zig-out
+/.zig-cache

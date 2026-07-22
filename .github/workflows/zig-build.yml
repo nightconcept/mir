@@ -1,0 +1,30 @@
+name: zig-build
+
+on:
+  push:
+    branches: [dev, mc]
+  workflow_dispatch:
+
+jobs:
+  test:
+
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - os: ubuntu-latest
+            arch: x86_64
+          - os: windows-latest
+            arch: x86_64
+          - os: macos-latest
+            arch: arm64
+    runs-on: ${{ matrix.os }}
+    name: ${{ matrix.arch }} ${{ matrix.os }}
+
+    steps:
+    - uses: actions/checkout@v4
+    - uses: mlugg/setup-zig@v1
+      with:
+        version: "0.16.0"
+    - name: zig build test
+      run: zig build test
