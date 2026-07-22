@@ -2,7 +2,7 @@ name: multi-os-test
 
 on:
   push:
-    branches: [dev]
+    branches: [dev, mc]
   workflow_dispatch:
 
 jobs:
