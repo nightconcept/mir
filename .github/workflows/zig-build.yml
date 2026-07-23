@@ -26,5 +26,8 @@ jobs:
     - uses: mlugg/setup-zig@v1
       with:
         version: "0.16.0"
+    - name: check test manifest matches GNUmakefile
+      if: runner.os != 'Windows'
+      run: python3 scripts/check-test-manifest.py
     - name: zig build test
       run: zig build test

@@ -54,6 +54,10 @@ zbuild:
 zbuild-test:
     zig build test
 
+# check test/tests.json's cases still match src/GNUmakefile's own targets (see test/README.md)
+check-test-manifest:
+    python3 scripts/check-test-manifest.py
+
 # cross-compile the zig build for all 3 CI platforms (linux/windows/macos) from this host,
 # one artifact tree per target triple under zig-out/<triple>/ -- can't run zbuild-test against
 # these since cross-compiled binaries don't execute on the host

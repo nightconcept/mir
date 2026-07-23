@@ -1,6 +1,6 @@
-#include "../mir.h"
-#include "../mir-gen.h"
-#include "../real-time.h"
+#include "mir.h"
+#include "mir-gen.h"
+#include "real-time.h"
 
 #if defined(_WIN32)
 #define SIZE "8190" /* use smaller stack */

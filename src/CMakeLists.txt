@@ -93,20 +93,24 @@ if(LLVM_FOUND)
   target_link_libraries(l2m mir m ${CMAKE_DL_LIBS} LLVM)
 endif()
 
+# test/bench fixtures (mir-tests/, adt-tests/, c-benchmarks/) live in a top-level test/ dir,
+# a sibling of this CMakeLists.txt's own PROJECT_SOURCE_DIR -- see test/README.md
+set(TEST_DIR ${PROJECT_SOURCE_DIR}/../test)
+
 # ------------------ ADT tests --------------------------
-add_executable (varr_test "adt-tests/mir-varr-test.c")
+add_executable (varr_test "${TEST_DIR}/adt-tests/mir-varr-test.c")
 target_include_directories(varr_test PRIVATE ${PROJECT_SOURCE_DIR})
 
-add_executable (dlist_test "adt-tests/mir-dlist-test.c")
+add_executable (dlist_test "${TEST_DIR}/adt-tests/mir-dlist-test.c")
 target_include_directories(dlist_test PRIVATE ${PROJECT_SOURCE_DIR})
 
-add_executable (bitmap_test "adt-tests/mir-bitmap-test.c")
+add_executable (bitmap_test "${TEST_DIR}/adt-tests/mir-bitmap-test.c")
 target_include_directories(bitmap_test PRIVATE ${PROJECT_SOURCE_DIR})
 
-add_executable (htab_test "adt-tests/mir-htab-test.c")
+add_executable (htab_test "${TEST_DIR}/adt-tests/mir-htab-test.c")
 target_include_directories(htab_test PRIVATE ${PROJECT_SOURCE_DIR})
 
-add_executable (reduce_test "adt-tests/mir-reduce-test.c")
+add_executable (reduce_test "${TEST_DIR}/adt-tests/mir-reduce-test.c")
 target_include_directories(reduce_test PRIVATE ${PROJECT_SOURCE_DIR})
 
 add_test(varr-test varr_test)
@@ -116,13 +120,13 @@ add_test(htab-test htab_test)
 add_test(reduce-test reduce_test ${PROJECT_SOURCE_DIR}/c2mir/c2mir.c)
 
 # ------------------ MIR utility tests ------------------------
-add_executable (simplify_test "mir-tests/simplify.c")
+add_executable (simplify_test "${TEST_DIR}/mir-tests/simplify.c")
 target_link_libraries(simplify_test mir)
 
-add_executable (scan_test "mir-tests/scan-test.c")
+add_executable (scan_test "${TEST_DIR}/mir-tests/scan-test.c")
 target_link_libraries(scan_test mir)
 
-add_executable (io_test "mir-tests/io.c")
+add_executable (io_test "${TEST_DIR}/mir-tests/io.c")
 target_link_libraries(io_test mir)
 
 add_test(simplify-test simplify_test)
@@ -130,46 +134,46 @@ add_test(scan-test scan_test)
 add_test(io-test io_test)
 
 # ------------------ Common for MIR tests ----------------------
-add_executable (run_test "mir-tests/run-test.c")
+add_executable (run_test "${TEST_DIR}/mir-tests/run-test.c")
 target_include_directories(run_test PRIVATE ${PROJECT_SOURCE_DIR})
 target_link_libraries(run_test mir)
 
 # ------------------ MIR interp tests --------------------------
-add_executable (interp_loop "mir-tests/loop-interp.c")
+add_executable (interp_loop "${TEST_DIR}/mir-tests/loop-interp.c")
 target_include_directories(interp_loop PRIVATE ${PROJECT_SOURCE_DIR})
 target_compile_definitions(interp_loop PRIVATE MIR_INTERP_DEBUG=1)
 target_link_libraries(interp_loop mir)
 
-add_executable (interp_loop_c "mir-tests/loop-interp.c")
+add_executable (interp_loop_c "${TEST_DIR}/mir-tests/loop-interp.c")
 target_include_directories(interp_loop_c PRIVATE ${PROJECT_SOURCE_DIR})
 target_compile_definitions(interp_loop_c PRIVATE MIR_INTERP_DEBUG=1 MIR_C_INTERFACE=1)
 target_link_libraries(interp_loop_c mir)
 
-add_executable (interp_sieve "mir-tests/sieve-interp.c")
+add_executable (interp_sieve "${TEST_DIR}/mir-tests/sieve-interp.c")
 target_include_directories(interp_sieve PRIVATE ${PROJECT_SOURCE_DIR})
 target_compile_definitions(interp_sieve PRIVATE MIR_INTERP_DEBUG=1)
 target_link_libraries(interp_sieve mir)
 
-add_executable (interp_sieve_c "mir-tests/sieve-interp.c")
+add_executable (interp_sieve_c "${TEST_DIR}/mir-tests/sieve-interp.c")
 target_include_directories(interp_sieve_c PRIVATE ${PROJECT_SOURCE_DIR})
 target_compile_definitions(interp_sieve_c PRIVATE MIR_INTERP_DEBUG=1 MIR_C_INTERFACE=1)
 target_link_libraries(interp_sieve_c mir)
 
-add_executable (interp_hi "mir-tests/hi-interp.c")
+add_executable (interp_hi "${TEST_DIR}/mir-tests/hi-interp.c")
 target_include_directories(interp_hi PRIVATE ${PROJECT_SOURCE_DIR})
 target_compile_definitions(interp_hi PRIVATE MIR_INTERP_DEBUG=1)
 target_link_libraries(interp_hi mir)
 
-add_executable (interp_args "mir-tests/args-interp.c")
+add_executable (interp_args "${TEST_DIR}/mir-tests/args-interp.c")
 target_include_directories(interp_args PRIVATE ${PROJECT_SOURCE_DIR})
 target_link_libraries(interp_args mir)
 
-add_executable (interp_args_c "mir-tests/args-interp.c")
+add_executable (interp_args_c "${TEST_DIR}/mir-tests/args-interp.c")
 target_include_directories(interp_args_c PRIVATE ${PROJECT_SOURCE_DIR})
 target_compile_definitions(interp_args_c PRIVATE MIR_C_INTERFACE=1)
 target_link_libraries(interp_args_c mir)
 
-add_executable (run_test_d "mir-tests/run-test.c")
+add_executable (run_test_d "${TEST_DIR}/mir-tests/run-test.c")
 target_include_directories(run_test_d PRIVATE ${PROJECT_SOURCE_DIR})
 target_compile_definitions(run_test_d PRIVATE TEST_GEN_DEBUG=1)
 target_link_libraries(run_test_d mir)
@@ -183,43 +187,43 @@ add_test(interp-test6 interp_args)
 add_test(interp-test7 interp_args_c)
 
 foreach (num 8 9 10)
-  add_test(interp-test${num} run_test -i ${PROJECT_SOURCE_DIR}/mir-tests/test${num}.mir)
+  add_test(interp-test${num} run_test -i ${TEST_DIR}/mir-tests/test${num}.mir)
 endforeach()
 
 if(NOT WIN32)
-  add_test(interp-test11 run_test -i ${PROJECT_SOURCE_DIR}/mir-tests/test11.mir) # for long double >= 10 bytes
-  add_test(interp-test12 run_test -i ${PROJECT_SOURCE_DIR}/mir-tests/test12.mir) # multiple return values
+  add_test(interp-test11 run_test -i ${TEST_DIR}/mir-tests/test11.mir) # for long double >= 10 bytes
+  add_test(interp-test12 run_test -i ${TEST_DIR}/mir-tests/test12.mir) # multiple return values
 endif()
 
 foreach (num 13 14 15 16)
-  add_test(interp-test${num} run_test -i ${PROJECT_SOURCE_DIR}/mir-tests/test${num}.mir)
+  add_test(interp-test${num} run_test -i ${TEST_DIR}/mir-tests/test${num}.mir)
 endforeach()
 
 # ------------------ MIR gen tests --------------------------
 
 foreach (num 1 2 3 4 5 6 7)
-  add_test(gen-test${num} run_test -d ${PROJECT_SOURCE_DIR}/mir-tests/test${num}.mir)
+  add_test(gen-test${num} run_test -d ${TEST_DIR}/mir-tests/test${num}.mir)
 endforeach()
 
 foreach (num 8 9 10)
-  add_test(gen-test${num} run_test -g ${PROJECT_SOURCE_DIR}/mir-tests/test${num}.mir)
+  add_test(gen-test${num} run_test -g ${TEST_DIR}/mir-tests/test${num}.mir)
 endforeach()
 
 if(NOT WIN32)
-  add_test(gen-test11 run_test -g ${PROJECT_SOURCE_DIR}/mir-tests/test11.mir) # for long double >= 10 bytes
-  add_test(gen-test12 run_test -g ${PROJECT_SOURCE_DIR}/mir-tests/test12.mir) # multiple return values
+  add_test(gen-test11 run_test -g ${TEST_DIR}/mir-tests/test11.mir) # for long double >= 10 bytes
+  add_test(gen-test12 run_test -g ${TEST_DIR}/mir-tests/test12.mir) # multiple return values
 endif()
 
 foreach (num 13 14 15 16)
-  add_test(gen-test${num} run_test -g ${PROJECT_SOURCE_DIR}/mir-tests/test${num}.mir)
+  add_test(gen-test${num} run_test -g ${TEST_DIR}/mir-tests/test${num}.mir)
 endforeach()
 
-add_executable (gen_loop "mir-tests/loop-sieve-gen.c")
+add_executable (gen_loop "${TEST_DIR}/mir-tests/loop-sieve-gen.c")
 target_include_directories(gen_loop PRIVATE ${PROJECT_SOURCE_DIR})
 target_compile_definitions(gen_loop PRIVATE TEST_GEN_DEBUG=1 TEST_GEN_LOOP)
 target_link_libraries(gen_loop mir)
 
-add_executable (gen_sieve "mir-tests/loop-sieve-gen.c")
+add_executable (gen_sieve "${TEST_DIR}/mir-tests/loop-sieve-gen.c")
 target_include_directories(gen_sieve PRIVATE ${PROJECT_SOURCE_DIR})
 target_compile_definitions(gen_sieve PRIVATE TEST_GEN_DEBUG=1 TEST_GEN_SIEVE)
 target_link_libraries(gen_sieve mir)
@@ -229,7 +233,7 @@ add_test(gen-test-sieve gen_sieve)
 
 # ------------------ readme example test ----------------
 
-add_executable (readme_example "mir-tests/readme-example.c")
+add_executable (readme_example "${TEST_DIR}/mir-tests/readme-example.c")
 target_include_directories(readme_example PRIVATE ${PROJECT_SOURCE_DIR})
 target_link_libraries(readme_example mir)
 
@@ -238,7 +242,7 @@ add_test(readme-example-test readme_example)
 # ------------------ mir2c test -------------------------
 
 add_executable (mir2c_test "mir2c/mir2c.c")
-target_include_directories(mir2c_test PRIVATE ${PROJECT_SOURCE_DIR})
+target_include_directories(mir2c_test PRIVATE ${PROJECT_SOURCE_DIR} ${TEST_DIR})
 target_compile_definitions(mir2c_test PRIVATE TEST_MIR2C)
 target_link_libraries(mir2c_test mir)
 

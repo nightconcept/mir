@@ -1,6 +1,9 @@
 PREFIX=/usr/local
 SRC_DIR=.
 BUILD_DIR=.
+# test/bench fixtures (mir-tests/, adt-tests/, c-tests/, c-benchmarks/) live in a top-level
+# test/ dir, a sibling of this GNUmakefile's own SRC_DIR -- see test/README.md
+TEST_DIR=$(SRC_DIR)/../test
 
 ADDITIONAL_INCLUDE_PATH:=
 UNAME_S := $(shell uname -s)
@@ -62,7 +65,7 @@ ifeq ($(OS),Windows_NT)
     EXEO=-Fe:
   endif
 
-  CPPFLAGS = -I$(SRC_DIR)
+  CPPFLAGS = -I$(SRC_DIR) -I$(TEST_DIR)
   LDLIBS   = $(MIR_LIBS)
   COMPILE = $(CC) $(CPPFLAGS) $(CFLAGS)
   ifeq ($(CC),gcc)
@@ -94,7 +97,7 @@ else
   CDEB2FLAGS = -Wall -Wextra -Wshadow -g3 -fsanitize=address -fsanitize=undefined -fno-sanitize=alignment
   LD2FLAGS =  -fsanitize=address -fsanitize=undefined  -fno-sanitize=alignment
   CFLAGS += $(COPTFLAGS)
-  CPPFLAGS = -I$(SRC_DIR)
+  CPPFLAGS = -I$(SRC_DIR) -I$(TEST_DIR)
   LDLIBS   = $(MIR_LIBS)
   COMPILE = $(CC) $(CPPFLAGS) -MMD -MP $(CFLAGS)
   LINK = $(CC) $(LDFLAGS)
@@ -359,23 +362,23 @@ clean-b2ctab:
 adt-test: varr-test dlist-test bitmap-test htab-test reduce-test
 
 varr-test: $(BUILD_DIR)/adt-tests
-	$(COMPILE_AND_LINK) $(SRC_DIR)/adt-tests/mir-varr-test.c $(EXEO)$(BUILD_DIR)/adt-tests/varr-test$(EXE)
+	$(COMPILE_AND_LINK) $(TEST_DIR)/adt-tests/mir-varr-test.c $(EXEO)$(BUILD_DIR)/adt-tests/varr-test$(EXE)
 	$(BUILD_DIR)/adt-tests/varr-test$(EXE)
 
 dlist-test: $(BUILD_DIR)/adt-tests
-	$(COMPILE_AND_LINK) $(SRC_DIR)/adt-tests/mir-dlist-test.c $(EXEO)$(BUILD_DIR)/adt-tests/dlist-test$(EXE)
+	$(COMPILE_AND_LINK) $(TEST_DIR)/adt-tests/mir-dlist-test.c $(EXEO)$(BUILD_DIR)/adt-tests/dlist-test$(EXE)
 	$(BUILD_DIR)/adt-tests/dlist-test$(EXE)
 
 bitmap-test: $(BUILD_DIR)/adt-tests
-	$(COMPILE_AND_LINK) $(SRC_DIR)/adt-tests/mir-bitmap-test.c $(EXEO)$(BUILD_DIR)/adt-tests/bitmap-test$(EXE)
+	$(COMPILE_AND_LINK) $(TEST_DIR)/adt-tests/mir-bitmap-test.c $(EXEO)$(BUILD_DIR)/adt-tests/bitmap-test$(EXE)
 	$(BUILD_DIR)/adt-tests/bitmap-test$(EXE)
 
 htab-test: $(BUILD_DIR)/adt-tests
-	$(COMPILE_AND_LINK) $(SRC_DIR)/adt-tests/mir-htab-test.c $(EXEO)$(BUILD_DIR)/adt-tests/htab-test$(EXE)
+	$(COMPILE_AND_LINK) $(TEST_DIR)/adt-tests/mir-htab-test.c $(EXEO)$(BUILD_DIR)/adt-tests/htab-test$(EXE)
 	$(BUILD_DIR)/adt-tests/htab-test$(EXE)
 
 reduce-test: $(BUILD_DIR)/adt-tests
-	$(COMPILE_AND_LINK) $(SRC_DIR)/adt-tests/mir-reduce-test.c $(EXEO)$(BUILD_DIR)/adt-tests/reduce-test$(EXE)
+	$(COMPILE_AND_LINK) $(TEST_DIR)/adt-tests/mir-reduce-test.c $(EXEO)$(BUILD_DIR)/adt-tests/reduce-test$(EXE)
 	$(BUILD_DIR)/adt-tests/reduce-test$(EXE) $(SRC_DIR)/c2mir/c2mir.c
 
 $(BUILD_DIR)/adt-tests:
@@ -391,7 +394,7 @@ clean-adt-tests:
 $(BUILD_DIR)/mir-tests:
 	mkdir -p $@
 
-$(BUILD_DIR)/run-test$(EXE): $(BUILD_DIR)/mir.$(OBJSUFF) $(BUILD_DIR)/mir-gen.$(OBJSUFF) $(SRC_DIR)/mir-tests/run-test.c | $(BUILD_DIR)/mir-tests
+$(BUILD_DIR)/run-test$(EXE): $(BUILD_DIR)/mir.$(OBJSUFF) $(BUILD_DIR)/mir-gen.$(OBJSUFF) $(TEST_DIR)/mir-tests/run-test.c | $(BUILD_DIR)/mir-tests
 	$(COMPILE_AND_LINK) $^ $(LDLIBS) $(EXEO)$@
 
 .PHONY: clean-mir-tests
@@ -402,16 +405,16 @@ clean-mir-tests: clean-mir-utility-tests clean-mir-interp-tests clean-mir-gen-te
 
 .PHONY: simplify-test scan-test io-test clean-mir-utility-tests
 
-simplify-test: $(BUILD_DIR)/mir.$(OBJSUFF) $(SRC_DIR)/mir-tests/simplify.c
+simplify-test: $(BUILD_DIR)/mir.$(OBJSUFF) $(TEST_DIR)/mir-tests/simplify.c
 	$(COMPILE_AND_LINK) $^ $(EXEO)$(BUILD_DIR)/simplify-test $(LDLIBS) && $(BUILD_DIR)/simplify-test$(EXE)
 
-hello-test: $(BUILD_DIR)/mir.$(OBJSUFF) $(BUILD_DIR)/mir-gen.$(OBJSUFF) $(SRC_DIR)/mir-tests/hello.c
+hello-test: $(BUILD_DIR)/mir.$(OBJSUFF) $(BUILD_DIR)/mir-gen.$(OBJSUFF) $(TEST_DIR)/mir-tests/hello.c
 	$(COMPILE_AND_LINK) $^ $(EXEO)$(BUILD_DIR)/hello-test $(LDLIBS) && $(BUILD_DIR)/hello-test$(EXE)
 
-scan-test: $(BUILD_DIR)/mir.$(OBJSUFF) $(SRC_DIR)/mir-tests/scan-test.c
+scan-test: $(BUILD_DIR)/mir.$(OBJSUFF) $(TEST_DIR)/mir-tests/scan-test.c
 	$(COMPILE_AND_LINK) $^ $(EXEO)$(BUILD_DIR)/scan-test $(LDLIBS) && $(BUILD_DIR)/scan-test$(EXE)
 
-io-test: $(BUILD_DIR)/mir.$(OBJSUFF) $(SRC_DIR)/mir-tests/io.c
+io-test: $(BUILD_DIR)/mir.$(OBJSUFF) $(TEST_DIR)/mir-tests/io.c
 	$(COMPILE_AND_LINK) $^ $(EXEO)$(BUILD_DIR)/io-test $(LDLIBS) && $(BUILD_DIR)/io-test$(EXE)
 
 clean-mir-utility-tests:
@@ -430,64 +433,64 @@ interp-test: interp-test1 interp-test2 interp-test3 interp-test4 interp-test5 in
 	     interp-test8 interp-test9 interp-test10 interp-test11 interp-test12 interp-test13 interp-test14\
 	     interp-test15 interp-test16
 
-interp-test1: $(BUILD_DIR)/mir.$(OBJSUFF) $(SRC_DIR)/mir-tests/loop-interp.c | $(BUILD_DIR)/mir-tests
+interp-test1: $(BUILD_DIR)/mir.$(OBJSUFF) $(TEST_DIR)/mir-tests/loop-interp.c | $(BUILD_DIR)/mir-tests
 	$(COMPILE_AND_LINK) -DMIR_INTERP_DEBUG=1 $^ $(EXEO)$(BUILD_DIR)/mir-tests/interp-test1$(EXE)
 	$(BUILD_DIR)/mir-tests/interp-test1$(EXE)
 
-interp-test2: $(BUILD_DIR)/mir.$(OBJSUFF) $(SRC_DIR)/mir-tests/loop-interp.c | $(BUILD_DIR)/mir-tests
+interp-test2: $(BUILD_DIR)/mir.$(OBJSUFF) $(TEST_DIR)/mir-tests/loop-interp.c | $(BUILD_DIR)/mir-tests
 	$(COMPILE_AND_LINK) -DMIR_INTERP_DEBUG=1 -DMIR_C_INTERFACE=1 $^ $(EXEO)$(BUILD_DIR)/mir-tests/interp-test2$(EXE)
 	$(BUILD_DIR)/mir-tests/interp-test2$(EXE)
 
-interp-test3: $(BUILD_DIR)/mir.$(OBJSUFF) $(SRC_DIR)/mir-tests/sieve-interp.c | $(BUILD_DIR)/mir-tests
+interp-test3: $(BUILD_DIR)/mir.$(OBJSUFF) $(TEST_DIR)/mir-tests/sieve-interp.c | $(BUILD_DIR)/mir-tests
 	$(COMPILE_AND_LINK) -DMIR_INTERP_DEBUG=1 $^ $(EXEO)$(BUILD_DIR)/mir-tests/interp-test3$(EXE)
 	$(BUILD_DIR)/mir-tests/interp-test3$(EXE)
 
-interp-test4:  $(BUILD_DIR)/mir.$(OBJSUFF) $(SRC_DIR)/mir-tests/sieve-interp.c | $(BUILD_DIR)/mir-tests
+interp-test4:  $(BUILD_DIR)/mir.$(OBJSUFF) $(TEST_DIR)/mir-tests/sieve-interp.c | $(BUILD_DIR)/mir-tests
 	$(COMPILE_AND_LINK) -DMIR_INTERP_DEBUG=1 -DMIR_C_INTERFACE=1 $^ $(EXEO)$(BUILD_DIR)/mir-tests/interp-test4$(EXE)
 	$(BUILD_DIR)/mir-tests/interp-test4$(EXE)
 
-interp-test5: $(BUILD_DIR)/mir.$(OBJSUFF) $(SRC_DIR)/mir-tests/hi-interp.c | $(BUILD_DIR)/mir-tests
+interp-test5: $(BUILD_DIR)/mir.$(OBJSUFF) $(TEST_DIR)/mir-tests/hi-interp.c | $(BUILD_DIR)/mir-tests
 	$(COMPILE_AND_LINK) -DMIR_INTERP_DEBUG=1 $^ $(EXEO)$(BUILD_DIR)/mir-tests/interp-test5$(EXE)
 	$(BUILD_DIR)/mir-tests/interp-test5$(EXE)
 
-interp-test6: $(BUILD_DIR)/mir.$(OBJSUFF) $(SRC_DIR)/mir-tests/args-interp.c | $(BUILD_DIR)/mir-tests
+interp-test6: $(BUILD_DIR)/mir.$(OBJSUFF) $(TEST_DIR)/mir-tests/args-interp.c | $(BUILD_DIR)/mir-tests
 	$(COMPILE_AND_LINK) $^ $(EXEO)$(BUILD_DIR)/mir-tests/interp-test6$(EXE)
 	$(BUILD_DIR)/mir-tests/interp-test6$(EXE)
 
-interp-test7: $(BUILD_DIR)/mir.$(OBJSUFF) $(SRC_DIR)/mir-tests/args-interp.c | $(BUILD_DIR)/mir-tests
+interp-test7: $(BUILD_DIR)/mir.$(OBJSUFF) $(TEST_DIR)/mir-tests/args-interp.c | $(BUILD_DIR)/mir-tests
 	$(COMPILE_AND_LINK) -DMIR_C_INTERFACE=1 $^ $(EXEO)$(BUILD_DIR)/mir-tests/interp-test7$(EXE)
 	$(BUILD_DIR)/mir-tests/interp-test7$(EXE)
 
 interp-test8: $(BUILD_DIR)/run-test$(EXE)
-	$(BUILD_DIR)/run-test$(EXE) -i $(SRC_DIR)/mir-tests/test8.mir
+	$(BUILD_DIR)/run-test$(EXE) -i $(TEST_DIR)/mir-tests/test8.mir
 
 interp-test9: $(BUILD_DIR)/run-test$(EXE)
-	$(BUILD_DIR)/run-test$(EXE) -i $(SRC_DIR)/mir-tests/test9.mir
+	$(BUILD_DIR)/run-test$(EXE) -i $(TEST_DIR)/mir-tests/test9.mir
 
 interp-test10: $(BUILD_DIR)/run-test$(EXE)
-	$(BUILD_DIR)/run-test$(EXE) -i $(SRC_DIR)/mir-tests/test10.mir
+	$(BUILD_DIR)/run-test$(EXE) -i $(TEST_DIR)/mir-tests/test10.mir
 
 interp-test11: $(BUILD_DIR)/run-test$(EXE)
-	$(BUILD_DIR)/run-test$(EXE) -i $(SRC_DIR)/mir-tests/test11.mir
+	$(BUILD_DIR)/run-test$(EXE) -i $(TEST_DIR)/mir-tests/test11.mir
 
 interp-test12: $(BUILD_DIR)/run-test$(EXE)
 ifeq ($(OS),Windows_NT)
 	echo Skipping test with multiple returns
 else
-	$(BUILD_DIR)/run-test$(EXE) -i $(SRC_DIR)/mir-tests/test12.mir
+	$(BUILD_DIR)/run-test$(EXE) -i $(TEST_DIR)/mir-tests/test12.mir
 endif
 
 interp-test13: $(BUILD_DIR)/run-test$(EXE)
-	$(BUILD_DIR)/run-test$(EXE) -i $(SRC_DIR)/mir-tests/test13.mir
+	$(BUILD_DIR)/run-test$(EXE) -i $(TEST_DIR)/mir-tests/test13.mir
 
 interp-test14: $(BUILD_DIR)/run-test$(EXE)
-	$(BUILD_DIR)/run-test$(EXE) -i $(SRC_DIR)/mir-tests/test14.mir
+	$(BUILD_DIR)/run-test$(EXE) -i $(TEST_DIR)/mir-tests/test14.mir
 
 interp-test15: $(BUILD_DIR)/run-test$(EXE)
-	$(BUILD_DIR)/run-test$(EXE) -i $(SRC_DIR)/mir-tests/test15.mir
+	$(BUILD_DIR)/run-test$(EXE) -i $(TEST_DIR)/mir-tests/test15.mir
 
 interp-test16: $(BUILD_DIR)/run-test$(EXE)
-	$(BUILD_DIR)/run-test$(EXE) -i $(SRC_DIR)/mir-tests/test16.mir
+	$(BUILD_DIR)/run-test$(EXE) -i $(TEST_DIR)/mir-tests/test16.mir
 
 clean-mir-interp-tests:
 	$(RM) $(BUILD_DIR)/mir-tests/interp-test1$(EXE) $(BUILD_DIR)/mir-tests/interp-test2$(EXE)
@@ -505,73 +508,73 @@ clean-mir-interp-tests:
 gen-test: gen-test-loop gen-test-sieve gen-test-get-thunk-addr gen-issue219-test gen-test1 gen-test2 gen-test3 gen-test4 gen-test5 gen-test6 gen-test7\
           gen-test8 gen-test9 gen-test10 gen-test11 gen-test12 gen-test13 gen-test14 gen-test15 gen-test16
 
-gen-test-loop: $(BUILD_DIR)/mir.$(OBJSUFF) $(BUILD_DIR)/mir-gen.$(OBJSUFF) $(SRC_DIR)/mir-tests/loop-sieve-gen.c | $(BUILD_DIR)/mir-tests
+gen-test-loop: $(BUILD_DIR)/mir.$(OBJSUFF) $(BUILD_DIR)/mir-gen.$(OBJSUFF) $(TEST_DIR)/mir-tests/loop-sieve-gen.c | $(BUILD_DIR)/mir-tests
 	$(COMPILE_AND_LINK) -DTEST_GEN_LOOP -DTEST_GEN_DEBUG=1 $^ $(LDLIBS) $(EXEO)$(BUILD_DIR)/mir-tests/gen-loop-test$(EXE)
 	$(BUILD_DIR)/mir-tests/gen-loop-test
 
-gen-test-sieve: $(BUILD_DIR)/mir.$(OBJSUFF) $(BUILD_DIR)/mir-gen.$(OBJSUFF) $(SRC_DIR)/mir-tests/loop-sieve-gen.c | $(BUILD_DIR)/mir-tests
+gen-test-sieve: $(BUILD_DIR)/mir.$(OBJSUFF) $(BUILD_DIR)/mir-gen.$(OBJSUFF) $(TEST_DIR)/mir-tests/loop-sieve-gen.c | $(BUILD_DIR)/mir-tests
 	$(COMPILE_AND_LINK) -DTEST_GEN_SIEVE -DTEST_GEN_DEBUG=1 $^ $(LDLIBS) $(EXEO)$(BUILD_DIR)/mir-tests/gen-sieve-test$(EXE)
 	$(BUILD_DIR)/mir-tests/gen-sieve-test
 
-gen-issue219-test: $(BUILD_DIR)/mir.$(OBJSUFF) $(BUILD_DIR)/mir-gen.$(OBJSUFF) $(SRC_DIR)/mir-tests/issue219.c | $(BUILD_DIR)/mir-tests
+gen-issue219-test: $(BUILD_DIR)/mir.$(OBJSUFF) $(BUILD_DIR)/mir-gen.$(OBJSUFF) $(TEST_DIR)/mir-tests/issue219.c | $(BUILD_DIR)/mir-tests
 	$(COMPILE_AND_LINK) -DTEST_GEN_SIEVE -DTEST_GEN_DEBUG=1 $^ $(LDLIBS) $(EXEO)$(BUILD_DIR)/mir-tests/issue219$(EXE)
 	$(BUILD_DIR)/mir-tests/issue219
 
-gen-test-get-thunk-addr: $(BUILD_DIR)/mir.$(OBJSUFF) $(BUILD_DIR)/mir-gen.$(OBJSUFF) $(SRC_DIR)/mir-tests/get-thunk-addr.c | $(BUILD_DIR)/mir-tests
+gen-test-get-thunk-addr: $(BUILD_DIR)/mir.$(OBJSUFF) $(BUILD_DIR)/mir-gen.$(OBJSUFF) $(TEST_DIR)/mir-tests/get-thunk-addr.c | $(BUILD_DIR)/mir-tests
 	$(COMPILE_AND_LINK) $^ $(LDLIBS) $(EXEO)$(BUILD_DIR)/mir-tests/gen-get-thunk-addr-test$(EXE)
 	$(BUILD_DIR)/mir-tests/gen-get-thunk-addr-test
 
 gen-test1: $(BUILD_DIR)/run-test$(EXE)
-	$(BUILD_DIR)/run-test$(EXE) -d $(SRC_DIR)/mir-tests/test1.mir
+	$(BUILD_DIR)/run-test$(EXE) -d $(TEST_DIR)/mir-tests/test1.mir
 
 gen-test2: $(BUILD_DIR)/run-test$(EXE)
-	$(BUILD_DIR)/run-test$(EXE) -d $(SRC_DIR)/mir-tests/test2.mir
+	$(BUILD_DIR)/run-test$(EXE) -d $(TEST_DIR)/mir-tests/test2.mir
 
 gen-test3: $(BUILD_DIR)/run-test$(EXE)
-	$(BUILD_DIR)/run-test$(EXE) -d $(SRC_DIR)/mir-tests/test3.mir
+	$(BUILD_DIR)/run-test$(EXE) -d $(TEST_DIR)/mir-tests/test3.mir
 
 gen-test4: $(BUILD_DIR)/run-test$(EXE)
-	$(BUILD_DIR)/run-test$(EXE) -d $(SRC_DIR)/mir-tests/test4.mir
+	$(BUILD_DIR)/run-test$(EXE) -d $(TEST_DIR)/mir-tests/test4.mir
 
 gen-test5: $(BUILD_DIR)/run-test$(EXE)
-	$(BUILD_DIR)/run-test$(EXE) -d $(SRC_DIR)/mir-tests/test5.mir
+	$(BUILD_DIR)/run-test$(EXE) -d $(TEST_DIR)/mir-tests/test5.mir
 
 gen-test6: $(BUILD_DIR)/run-test$(EXE)
-	$(BUILD_DIR)/run-test$(EXE) -d $(SRC_DIR)/mir-tests/test6.mir
+	$(BUILD_DIR)/run-test$(EXE) -d $(TEST_DIR)/mir-tests/test6.mir
 
 gen-test7: $(BUILD_DIR)/run-test$(EXE)
-	$(BUILD_DIR)/run-test$(EXE) -d $(SRC_DIR)/mir-tests/test7.mir
+	$(BUILD_DIR)/run-test$(EXE) -d $(TEST_DIR)/mir-tests/test7.mir
 
 gen-test8: $(BUILD_DIR)/run-test$(EXE)
-	$(BUILD_DIR)/run-test$(EXE) -g $(SRC_DIR)/mir-tests/test8.mir
+	$(BUILD_DIR)/run-test$(EXE) -g $(TEST_DIR)/mir-tests/test8.mir
 
 gen-test9: $(BUILD_DIR)/run-test$(EXE)
-	$(BUILD_DIR)/run-test$(EXE) -gd $(SRC_DIR)/mir-tests/test9.mir
+	$(BUILD_DIR)/run-test$(EXE) -gd $(TEST_DIR)/mir-tests/test9.mir
 
 gen-test10: $(BUILD_DIR)/run-test$(EXE)
-	$(BUILD_DIR)/run-test$(EXE) -g $(SRC_DIR)/mir-tests/test10.mir
+	$(BUILD_DIR)/run-test$(EXE) -g $(TEST_DIR)/mir-tests/test10.mir
 
 gen-test11: $(BUILD_DIR)/run-test$(EXE)
-	$(BUILD_DIR)/run-test$(EXE) -gd $(SRC_DIR)/mir-tests/test11.mir
+	$(BUILD_DIR)/run-test$(EXE) -gd $(TEST_DIR)/mir-tests/test11.mir
 
 gen-test12: $(BUILD_DIR)/run-test$(EXE)
 ifeq ($(OS),Windows_NT)
 	echo Skipping test with multiple returns
 else
-	$(BUILD_DIR)/run-test$(EXE) -gd $(SRC_DIR)/mir-tests/test12.mir
+	$(BUILD_DIR)/run-test$(EXE) -gd $(TEST_DIR)/mir-tests/test12.mir
 endif
 
 gen-test13: $(BUILD_DIR)/run-test$(EXE)
-	$(BUILD_DIR)/run-test$(EXE) -g $(SRC_DIR)/mir-tests/test13.mir
+	$(BUILD_DIR)/run-test$(EXE) -g $(TEST_DIR)/mir-tests/test13.mir
 
 gen-test14: $(BUILD_DIR)/run-test$(EXE)
-	$(BUILD_DIR)/run-test$(EXE) -g $(SRC_DIR)/mir-tests/test14.mir
+	$(BUILD_DIR)/run-test$(EXE) -g $(TEST_DIR)/mir-tests/test14.mir
 
 gen-test15: $(BUILD_DIR)/run-test$(EXE)
-	$(BUILD_DIR)/run-test$(EXE) -g $(SRC_DIR)/mir-tests/test15.mir
+	$(BUILD_DIR)/run-test$(EXE) -g $(TEST_DIR)/mir-tests/test15.mir
 
 gen-test16: $(BUILD_DIR)/run-test$(EXE)
-	$(BUILD_DIR)/run-test$(EXE) -g $(SRC_DIR)/mir-tests/test16.mir
+	$(BUILD_DIR)/run-test$(EXE) -g $(TEST_DIR)/mir-tests/test16.mir
 
 clean-mir-gen-tests:
 	$(RM) $(BUILD_DIR)/mir-tests/gen-loop-test$(EXE) $(BUILD_DIR)/mir-tests/gen-sieve-test$(EXE)
@@ -593,7 +596,7 @@ mir-bin-run-test: $(BUILD_DIR)/mir-bin-run$(EXE) $(BUILD_DIR)/c2m$(EXE)
 .PHONY: readme-example-test clean-readme-example-test
 
 readme-example-test: $(BUILD_DIR)/mir.$(OBJSUFF) $(BUILD_DIR)/mir-gen.$(OBJSUFF)\
-                           $(SRC_DIR)/mir-tests/readme-example.c | $(BUILD_DIR)/mir-tests
+                           $(TEST_DIR)/mir-tests/readme-example.c | $(BUILD_DIR)/mir-tests
 	$(COMPILE_AND_LINK) $^ $(LDLIBS) $(EXEO)$(BUILD_DIR)/mir-tests/readme-example-test$(EXE)
 	$(BUILD_DIR)/mir-tests/readme-example-test$(EXE)
 
@@ -623,19 +626,19 @@ c2mir-simple-test: $(BUILD_DIR)/c2m$(EXE)
 c2mir-full-test: c2mir-interp-test c2mir-gen-test c2mir-bb-gen-test c2mir-gen-test0 c2mir-gen-test1 c2mir-gen-test3 c2mir-bootstrap
 
 c2mir-interp-test: $(BUILD_DIR)/c2m$(EXE)
-	$(SHELL) $(SRC_DIR)/c-tests/runtests.sh $(SRC_DIR)/c-tests/use-c2m-interp $(BUILD_DIR)/c2m$(EXE)
+	$(SHELL) $(TEST_DIR)/c-tests/runtests.sh $(TEST_DIR)/c-tests/use-c2m-interp $(BUILD_DIR)/c2m$(EXE)
 c2mir-gen-test: $(BUILD_DIR)/c2m$(EXE)
-	$(SHELL) $(SRC_DIR)/c-tests/runtests.sh $(SRC_DIR)/c-tests/use-c2m-gen $(BUILD_DIR)/c2m$(EXE)
+	$(SHELL) $(TEST_DIR)/c-tests/runtests.sh $(TEST_DIR)/c-tests/use-c2m-gen $(BUILD_DIR)/c2m$(EXE)
 c2mir-bb-gen-test: $(BUILD_DIR)/c2m$(EXE)
-	$(SHELL) $(SRC_DIR)/c-tests/runtests.sh $(SRC_DIR)/c-tests/use-c2m-gen-bb $(BUILD_DIR)/c2m$(EXE)
+	$(SHELL) $(TEST_DIR)/c-tests/runtests.sh $(TEST_DIR)/c-tests/use-c2m-gen-bb $(BUILD_DIR)/c2m$(EXE)
 c2mir-parallel-gen-test: $(BUILD_DIR)/c2m$(EXE)
-	$(SHELL) $(SRC_DIR)/c-tests/runtests.sh $(SRC_DIR)/c-tests/use-c2m-parallel-gen $(BUILD_DIR)/c2m$(EXE)
+	$(SHELL) $(TEST_DIR)/c-tests/runtests.sh $(TEST_DIR)/c-tests/use-c2m-parallel-gen $(BUILD_DIR)/c2m$(EXE)
 c2mir-gen-test0: $(BUILD_DIR)/c2m$(EXE)
-	$(SHELL) $(SRC_DIR)/c-tests/runtests.sh $(SRC_DIR)/c-tests/use-c2m-gen-O0 $(BUILD_DIR)/c2m$(EXE)
+	$(SHELL) $(TEST_DIR)/c-tests/runtests.sh $(TEST_DIR)/c-tests/use-c2m-gen-O0 $(BUILD_DIR)/c2m$(EXE)
 c2mir-gen-test1: $(BUILD_DIR)/c2m$(EXE)
-	$(SHELL) $(SRC_DIR)/c-tests/runtests.sh $(SRC_DIR)/c-tests/use-c2m-gen-O1 $(BUILD_DIR)/c2m$(EXE)
+	$(SHELL) $(TEST_DIR)/c-tests/runtests.sh $(TEST_DIR)/c-tests/use-c2m-gen-O1 $(BUILD_DIR)/c2m$(EXE)
 c2mir-gen-test3: $(BUILD_DIR)/c2m$(EXE)
-	$(SHELL) $(SRC_DIR)/c-tests/runtests.sh $(SRC_DIR)/c-tests/use-c2m-gen-O3 $(BUILD_DIR)/c2m$(EXE)
+	$(SHELL) $(TEST_DIR)/c-tests/runtests.sh $(TEST_DIR)/c-tests/use-c2m-gen-O3 $(BUILD_DIR)/c2m$(EXE)
 
 # ------------------ c2m bootstrap tests ----------------
 
@@ -739,9 +742,9 @@ l2m-simple-test: l2m-test1 l2m-test2
 l2m-full-test: l2m-interp-test l2m-gen-test
 
 l2m-interp-test: $(BUILD_DIR)/l2m
-	$(SHELL) c-tests/runtests.sh c-tests/use-l2m-interp $(BUILD_DIR)/c2m
+	$(SHELL) $(TEST_DIR)/c-tests/runtests.sh $(TEST_DIR)/c-tests/use-l2m-interp $(BUILD_DIR)/c2m
 l2m-gen-test: $(BUILD_DIR)/l2m
-	$(SHELL) c-tests/runtests.sh c-tests/use-l2m-gen $(BUILD_DIR)/c2m
+	$(SHELL) $(TEST_DIR)/c-tests/runtests.sh $(TEST_DIR)/c-tests/use-l2m-gen $(BUILD_DIR)/c2m
 
 l2m-test1: $(BUILD_DIR)/l2m
 	@echo +++++ LLVM to MIR translator test '(-O0)' +++++++
@@ -760,17 +763,17 @@ l2m-test2: $(BUILD_DIR)/l2m
 .PHONY: clean-bench
 .PHONY: io-bench interp-bench gen-bench gen-bench2 gen-speed c2mir-sieve-bench c2mir-bench mir2c-bench
 
-io-bench: $(BUILD_DIR)/mir.$(OBJSUFF) $(SRC_DIR)/mir-tests/io-bench.c
+io-bench: $(BUILD_DIR)/mir.$(OBJSUFF) $(TEST_DIR)/mir-tests/io-bench.c
 	@echo ========io-bench can take upto 2 min===============
 	$(COMPILE_AND_LINK) $^ $(EXEO)$(BUILD_DIR)/io-bench $(LDLIBS) && $(BUILD_DIR)/io-bench$(EXE)
 
-interp-bench: $(BUILD_DIR)/mir.$(OBJSUFF) $(SRC_DIR)/mir-tests/loop-interp.c
+interp-bench: $(BUILD_DIR)/mir.$(OBJSUFF) $(TEST_DIR)/mir-tests/loop-interp.c
 	$(COMPILE_AND_LINK) -DMIR_C_INTERFACE=1 $^ $(EXEO)$(BUILD_DIR)/interp-bench$(EXE) $(LDLIBS)
 	$(BUILD_DIR)/interp-bench && size $(BUILD_DIR)/interp-bench
 	$(COMPILE_AND_LINK) $^ $(EXEO)$(BUILD_DIR)/interp-bench$(EXE) $(LDLIBS)
 	$(BUILD_DIR)/interp-bench && size $(BUILD_DIR)/interp-bench
 
-gen-bench: $(BUILD_DIR)/mir.$(OBJSUFF) $(BUILD_DIR)/mir-gen.$(OBJSUFF) $(SRC_DIR)/mir-tests/loop-sieve-gen.c
+gen-bench: $(BUILD_DIR)/mir.$(OBJSUFF) $(BUILD_DIR)/mir-gen.$(OBJSUFF) $(TEST_DIR)/mir-tests/loop-sieve-gen.c
 	$(COMPILE_AND_LINK) -DTEST_GEN_LOOP $^ $(EXEO)$(BUILD_DIR)/gen-bench$(EXE) $(LDLIBS)
 	$(BUILD_DIR)/gen-bench && size $(BUILD_DIR)/gen-bench
 	$(COMPILE_AND_LINK) -DTEST_GEN_SIEVE $^ $(EXEO)$(BUILD_DIR)/gen-bench$(EXE) $(LDLIBS)
@@ -788,7 +791,7 @@ gen-bench2: $(BUILD_DIR)/c2m # Ignore M1 MacOs as it needs another procedure to 
 	  done;\
 	fi
 
-gen-speed: $(BUILD_DIR)/mir.$(OBJSUFF) $(BUILD_DIR)/mir-gen.$(OBJSUFF) $(SRC_DIR)/mir-tests/loop-sieve-gen.c
+gen-speed: $(BUILD_DIR)/mir.$(OBJSUFF) $(BUILD_DIR)/mir-gen.$(OBJSUFF) $(TEST_DIR)/mir-tests/loop-sieve-gen.c
 	if type valgrind  > /dev/null 2>&1; then \
 	  $(COMPILE_AND_LINK) -DTEST_GEN_SIEVE -DTEST_GENERATION_ONLY $^ $(LDLIBS) $(EXEO)$(BUILD_DIR)/gen-speed$(EXE)\
 	  && valgrind --tool=lackey $(BUILD_DIR)/gen-speed; \
@@ -798,10 +801,10 @@ c2mir-sieve-bench: $(BUILD_DIR)/c2m
 	$(BUILD_DIR)/c2m -DSIEVE_BENCH -v $(SRC_DIR)/sieve.c -eg && size $(BUILD_DIR)/c2m
 
 c2mir-bench: $(BUILD_DIR)/c2m
-	$(SRC_DIR)/c-benchmarks/run-benchmarks.sh
+	$(TEST_DIR)/c-benchmarks/run-benchmarks.sh
 
 c2mir-bench-short: $(BUILD_DIR)/c2m
-	$(SRC_DIR)/c-benchmarks/run-benchmarks.sh short
+	$(TEST_DIR)/c-benchmarks/run-benchmarks.sh short
 
 mir2c-bench: $(BUILD_DIR)/mir.$(OBJSUFF) $(SRC_DIR)/mir2c/mir2c.c
 	$(COMPILE_AND_LINK) -DTEST_MIR2C $^ $(EXEO)$(BUILD_DIR)/mir2c-bench$(EXE) $(LDLIBS)
@@ -844,14 +847,14 @@ sloc:
 	| awk '{last=$$1} END {print last}'
 
 gcc-test:
-	$(SHELL) $(SRC_DIR)/c-tests/runtests.sh $(SRC_DIR)/c-tests/use-gcc
+	$(SHELL) $(TEST_DIR)/c-tests/runtests.sh $(TEST_DIR)/c-tests/use-gcc
 
 clang-test:
-	$(SHELL) $(SRC_DIR)/c-tests/runtests.sh $(SRC_DIR)/c-tests/use-clang
+	$(SHELL) $(TEST_DIR)/c-tests/runtests.sh $(TEST_DIR)/c-tests/use-clang
 
 # Comparison of gcc, c2m, wasmer, wasmtime on ogg encoding.  You need wasi-clang script calling clang from wasi-sdk.
 oggenc-bench:
-	$(SHELL) $(SRC_DIR)/c-benchmarks/run-oggenc.sh
+	$(SHELL) $(TEST_DIR)/c-benchmarks/run-oggenc.sh
 
 # Very long testing (hours and hours):
 csmith: csmith-c2m-gcc csmith-c2m

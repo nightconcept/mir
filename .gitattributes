@@ -5,4 +5,4 @@
 # Keep everything under these paths as LF regardless of platform checkout
 # settings, so all three CI platforms compare apples to apples.
 *.mir text eol=lf
-c-tests/** text eol=lf
+test/c-tests/** text eol=lf

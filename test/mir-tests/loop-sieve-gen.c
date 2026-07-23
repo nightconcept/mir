@@ -1,5 +1,5 @@
-#include "../mir-gen.h"
-#include "../real-time.h"
+#include "mir-gen.h"
+#include "real-time.h"
 #if defined(TEST_GEN_LOOP)
 #include "api-loop.h"
 #else

@@ -1,4 +1,4 @@
-#include "../mir.h"
+#include "mir.h"
 #include <time.h>
 
 #include "api-sieve.h"

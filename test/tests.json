@@ -1,0 +1,72 @@
+{
+  "_comment": "Data-driven test cases shared by build.zig's test step, mirroring a subset of src/GNUmakefile's individual test/test-all targets. See test/README.md. GNUmakefile itself is NOT generated from this file -- it keeps its own hand-written targets; a checker (scripts/check-test-manifest.py) diffs the two so they can't silently drift. Paths below are relative to this test/ directory.",
+
+  "adt_tests": [
+    { "name": "varr-test", "source": "adt-tests/mir-varr-test.c" },
+    { "name": "dlist-test", "source": "adt-tests/mir-dlist-test.c" },
+    { "name": "bitmap-test", "source": "adt-tests/mir-bitmap-test.c" },
+    { "name": "htab-test", "source": "adt-tests/mir-htab-test.c" },
+    { "name": "reduce-test", "source": "adt-tests/mir-reduce-test.c", "run_args": ["src/c2mir/c2mir.c"] }
+  ],
+
+  "mir_utility_tests": [
+    { "name": "simplify-test", "source": "mir-tests/simplify.c" },
+    { "name": "scan-test", "source": "mir-tests/scan-test.c" },
+    { "name": "io-test", "source": "mir-tests/io.c" }
+  ],
+
+  "interp_tests": [
+    { "name": "interp-test1", "source": "mir-tests/loop-interp.c", "defines": ["MIR_INTERP_DEBUG=1"] },
+    { "name": "interp-test2", "source": "mir-tests/loop-interp.c", "defines": ["MIR_INTERP_DEBUG=1", "MIR_C_INTERFACE=1"] },
+    { "name": "interp-test3", "source": "mir-tests/sieve-interp.c", "defines": ["MIR_INTERP_DEBUG=1"] },
+    { "name": "interp-test4", "source": "mir-tests/sieve-interp.c", "defines": ["MIR_INTERP_DEBUG=1", "MIR_C_INTERFACE=1"] },
+    { "name": "interp-test5", "source": "mir-tests/hi-interp.c", "defines": ["MIR_INTERP_DEBUG=1"] },
+    { "name": "interp-test6", "source": "mir-tests/args-interp.c", "defines": [] },
+    { "name": "interp-test7", "source": "mir-tests/args-interp.c", "defines": ["MIR_C_INTERFACE=1"] }
+  ],
+
+  "gen_tests": [
+    { "name": "gen-test-loop", "source": "mir-tests/loop-sieve-gen.c", "defines": ["TEST_GEN_LOOP", "TEST_GEN_DEBUG=1"] },
+    { "name": "gen-test-sieve", "source": "mir-tests/loop-sieve-gen.c", "defines": ["TEST_GEN_SIEVE", "TEST_GEN_DEBUG=1"] },
+    { "name": "gen-issue219-test", "source": "mir-tests/issue219.c", "defines": ["TEST_GEN_SIEVE", "TEST_GEN_DEBUG=1"] },
+    { "name": "gen-test-get-thunk-addr", "source": "mir-tests/get-thunk-addr.c", "defines": [] }
+  ],
+
+  "_run_test_mir_comment": "cases run via the shared run-test executable (mir-tests/run-test.c) against a .mir fixture; flag selects interp (-i) vs gen (-d/-g/-gd)",
+  "run_test_mir_cases": [
+    { "name": "interp-test8", "flag": "-i", "fixture": "test8.mir" },
+    { "name": "interp-test9", "flag": "-i", "fixture": "test9.mir" },
+    { "name": "interp-test10", "flag": "-i", "fixture": "test10.mir" },
+    { "name": "interp-test11", "flag": "-i", "fixture": "test11.mir" },
+    { "name": "interp-test12", "flag": "-i", "fixture": "test12.mir", "skip_on_windows": true },
+    { "name": "interp-test13", "flag": "-i", "fixture": "test13.mir" },
+    { "name": "interp-test14", "flag": "-i", "fixture": "test14.mir" },
+    { "name": "interp-test15", "flag": "-i", "fixture": "test15.mir" },
+    { "name": "interp-test16", "flag": "-i", "fixture": "test16.mir" },
+
+    { "name": "gen-test1", "flag": "-d", "fixture": "test1.mir" },
+    { "name": "gen-test2", "flag": "-d", "fixture": "test2.mir" },
+    { "name": "gen-test3", "flag": "-d", "fixture": "test3.mir" },
+    { "name": "gen-test4", "flag": "-d", "fixture": "test4.mir" },
+    { "name": "gen-test5", "flag": "-d", "fixture": "test5.mir" },
+    { "name": "gen-test6", "flag": "-d", "fixture": "test6.mir" },
+    { "name": "gen-test7", "flag": "-d", "fixture": "test7.mir" },
+    { "name": "gen-test8", "flag": "-g", "fixture": "test8.mir" },
+    { "name": "gen-test9", "flag": "-gd", "fixture": "test9.mir" },
+    { "name": "gen-test10", "flag": "-g", "fixture": "test10.mir" },
+    { "name": "gen-test11", "flag": "-gd", "fixture": "test11.mir" },
+    { "name": "gen-test12", "flag": "-gd", "fixture": "test12.mir", "skip_on_windows": true },
+    { "name": "gen-test13", "flag": "-g", "fixture": "test13.mir" },
+    { "name": "gen-test14", "flag": "-g", "fixture": "test14.mir" },
+    { "name": "gen-test15", "flag": "-g", "fixture": "test15.mir" },
+    { "name": "gen-test16", "flag": "-g", "fixture": "test16.mir" }
+  ],
+
+  "_c2mir_runtests_comment": "standard-mode c-tests suite runs via c-tests/runtests.sh, matching a subset of GNUmakefile's c2mir-full-test (excludes -O0/-O1/-O3 variants and the bootstrap self-compile tests -- see docs/build.md follow-up note). Skipped entirely on Windows targets pending a portable sh there.",
+  "c2mir_runtests": [
+    { "name": "c2mir-interp-test", "mode_file": "use-c2m-interp" },
+    { "name": "c2mir-gen-test", "mode_file": "use-c2m-gen" },
+    { "name": "c2mir-bb-gen-test", "mode_file": "use-c2m-gen-bb" },
+    { "name": "c2mir-parallel-gen-test", "mode_file": "use-c2m-parallel-gen" }
+  ]
+}
