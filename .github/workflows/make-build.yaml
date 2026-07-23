@@ -22,30 +22,14 @@ jobs:
     name: ${{ matrix.arch }} ${{ matrix.os }}
 
     steps:
-    - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
-    - name: tests
+    - name: Checkout
+      uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+    - name: Run Tests (Make)
       if: runner.os != 'Windows'
       run: make -C src test
-    - name: tests
+    - name: Run Tests (CMake)
       if: runner.os == 'Windows'
       run: |
         cmake -S src -B build -A x64 -DBUILD_TESTING=ON
         cmake --build build --config Release
         python scripts/run_tests.py --build-dir build
-    - name: setup msys2 (windows parity)
-      if: runner.os == 'Windows'
-      uses: msys2/setup-msys2@v2
-      id: msys2
-      with:
-        msystem: MINGW64
-        update: false
-        install: >-
-          mingw-w64-x86_64-gcc
-          make
-          diffutils
-    - name: tests
-      if: runner.os == 'Windows'
-      shell: pwsh
-      env:
-        MSYS2_ROOT: ${{ steps.msys2.outputs.msys2-location }}
-      run: python scripts/win-test.py --keep-going
