@@ -59,9 +59,22 @@ if(WIN32)
   # workflow runs ilammy/msvc-dev-cmd before configuring so $ENV{INCLUDE} is
   # populated here. c2mir.c's ADDITIONAL_INCLUDE_PATH parsing already expects a
   # ';'-separated list on _WIN32, matching $ENV{INCLUDE}'s own format.
+  #
+  # This is written to a force-included header rather than passed via
+  # target_compile_definitions: the Visual Studio generator re-escapes
+  # PreprocessorDefinitions when writing the .vcxproj, which mangles a
+  # backslash-heavy path list into an invalid string literal (MSVC C7772).
+  # A plain text file isn't subject to that XML/command-line re-escaping.
   if(DEFINED ENV{INCLUDE} AND NOT "$ENV{INCLUDE}" STREQUAL "")
     string(REPLACE "\\" "\\\\" MIR_WIN_INCLUDE_PATH "$ENV{INCLUDE}")
-    target_compile_definitions(mir PRIVATE "ADDITIONAL_INCLUDE_PATH=\"${MIR_WIN_INCLUDE_PATH}\"")
+    set(MIR_WIN_INCLUDE_HEADER "${CMAKE_CURRENT_BINARY_DIR}/mir_win_include_path.h")
+    file(WRITE "${MIR_WIN_INCLUDE_HEADER}"
+         "#define ADDITIONAL_INCLUDE_PATH \"${MIR_WIN_INCLUDE_PATH}\"\n")
+    if(MSVC)
+      target_compile_options(mir PRIVATE "/FI${MIR_WIN_INCLUDE_HEADER}")
+    else()
+      target_compile_options(mir PRIVATE -include "${MIR_WIN_INCLUDE_HEADER}")
+    endif()
   endif()
 endif()
 
