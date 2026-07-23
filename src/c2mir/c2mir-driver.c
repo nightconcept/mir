@@ -532,7 +532,12 @@ static void *import_resolver (const char *name) {
 static int mir_read_func (MIR_context_t ctx MIR_UNUSED) { return t_getc (&curr_input); }
 
 static const char *get_file_name (const char *name, const char *suffix) {
-  const char *res = strrchr (name, slash);
+  /* strip the directory on either separator, not just the platform's own -- e.g. Windows
+     builds can still be given forward-slash paths (out-of-tree invocations, MSYS-style
+     tooling), so a single hardcoded `slash` here silently fails to strip anything. */
+  const char *fwd = strrchr (name, '/');
+  const char *back = strrchr (name, '\\');
+  const char *res = fwd == NULL ? back : back == NULL ? fwd : (fwd > back ? fwd : back);
 
   if (res != NULL) name = res + 1;
   VARR_TRUNC (char, temp_string, 0);
