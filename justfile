@@ -6,45 +6,45 @@ default:
 
 # release build (optimized) in out/
 build:
-    python scripts/run_make.py --out all
+    python3 scripts/run_make.py --out all
 
 # unoptimized debug build
 debug:
-    python scripts/run_make.py --out debug
+    python3 scripts/run_make.py --out debug
 
 # core test suite, with an aggregate pass/total summary line
 test:
-    python scripts/run_make.py --isolated --summary test
+    python3 scripts/run_make.py --isolated --summary test
 
 # core suite plus adt/simplify/io/scan/mir2c/l2m tests
 test-all:
-    python scripts/run_make.py --isolated --summary test-all
+    python3 scripts/run_make.py --isolated --summary test-all
 
 adt-test:
-    python scripts/run_make.py --isolated adt-test
+    python3 scripts/run_make.py --isolated adt-test
 
 gen-test:
-    python scripts/run_make.py --isolated gen-test
+    python3 scripts/run_make.py --isolated gen-test
 
 interp-test:
-    python scripts/run_make.py --isolated interp-test
+    python3 scripts/run_make.py --isolated interp-test
 
 c2mir-test:
-    python scripts/run_make.py --isolated --summary c2mir-test
+    python3 scripts/run_make.py --isolated --summary c2mir-test
 
 c2mir-bootstrap-test:
-    python scripts/run_make.py --isolated c2mir-bootstrap-test
+    python3 scripts/run_make.py --isolated c2mir-bootstrap-test
 
 bench:
-    python scripts/run_make.py --out bench
+    python3 scripts/run_make.py --out bench
 
 # remove the stable out/ build
 clean:
-    python scripts/run_make.py --clean-out
+    python3 scripts/run_make.py --clean-out
 
 # remove every isolated test run and its logs
 clean-all-tests:
-    python scripts/run_make.py --clean-all-tests
+    python3 scripts/run_make.py --clean-all-tests
 
 # zig build (see build.zig), current host platform only -- distinct from `just build` (make)
 zbuild:
