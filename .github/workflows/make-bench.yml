@@ -1,4 +1,4 @@
-name: multi-os-bench
+name: make-bench
 
 on: [workflow_dispatch]
 #  schedule:
@@ -19,6 +19,6 @@ jobs:
     name: ${{ matrix.arch }} ${{ matrix.os }}
 
     steps:
-    - uses: actions/checkout@v4
-    - name: make bench
-      run: make bench
+    - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+    - name: bench
+      run: make -C src bench

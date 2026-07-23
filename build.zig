@@ -283,4 +283,51 @@ pub fn build(b: *std.Build) void {
     // all data-driven from test/tests.json -- see addManifestTests's doc comment for what's
     // still missing to reach full parity with `make test-all`.
     addManifestTests(b, target, optimize, mir_static, c2m, test_step);
+
+    // ---- bench step: parity subset of `make bench` (io-bench, interp-bench, gen-bench,
+    // c2mir-sieve-bench, mir2c-bench) ----
+    // Deliberately NOT covered: gen-bench2 (self-compiles c2m's own sources mid-build, the same
+    // plumbing gap noted above for the bootstrap tests), gen-speed (valgrind-gated local
+    // profiling, not a real benchmark), and the full c2mir-bench suite (test/c-benchmarks/
+    // run-benchmarks.sh hardcodes `./c2m` relative to its cwd rather than taking the compiler
+    // path as an argument, unlike runtests.sh -- needs cwd wiring this build doesn't have yet).
+    const bench_step = b.step("bench", "Run the core benchmark suite (io, interp, gen, c2mir-sieve, mir2c)");
+
+    const io_bench = addManifestTestExe(b, target, optimize, mir_static, "io-bench", "mir-tests/io-bench.c", &.{});
+    bench_step.dependOn(&b.addRunArtifact(io_bench).step);
+
+    // interp-bench runs loop-interp.c twice, with and without the MIR_C_INTERFACE dispatch,
+    // matching GNUmakefile's interp-bench.
+    const interp_bench_variants = [_]struct { name: []const u8, defines: []const []const u8 }{
+        .{ .name = "interp-bench", .defines = &.{} },
+        .{ .name = "interp-bench-c-interface", .defines = &.{"MIR_C_INTERFACE=1"} },
+    };
+    for (interp_bench_variants) |v| {
+        const exe = addManifestTestExe(b, target, optimize, mir_static, v.name, "mir-tests/loop-interp.c", v.defines);
+        bench_step.dependOn(&b.addRunArtifact(exe).step);
+    }
+
+    // gen-bench runs loop-sieve-gen.c in its loop and sieve modes, matching GNUmakefile's
+    // gen-bench.
+    const gen_bench_variants = [_]struct { name: []const u8, defines: []const []const u8 }{
+        .{ .name = "gen-bench-loop", .defines = &.{"TEST_GEN_LOOP"} },
+        .{ .name = "gen-bench-sieve", .defines = &.{"TEST_GEN_SIEVE"} },
+    };
+    for (gen_bench_variants) |v| {
+        const exe = addManifestTestExe(b, target, optimize, mir_static, v.name, "mir-tests/loop-sieve-gen.c", v.defines);
+        bench_step.dependOn(&b.addRunArtifact(exe).step);
+    }
+
+    // c2mir-sieve-bench: run sieve.c through c2m's generator with SIEVE_BENCH's larger N.
+    const c2mir_sieve_bench = b.addRunArtifact(c2m);
+    c2mir_sieve_bench.addArgs(&.{ "-DSIEVE_BENCH", "-v" });
+    c2mir_sieve_bench.addFileArg(b.path("src/sieve.c"));
+    c2mir_sieve_bench.addArg("-eg");
+    bench_step.dependOn(&c2mir_sieve_bench.step);
+
+    // mir2c-bench: reuse the mir2c-test binary (already built with -DTEST_MIR2C above), run
+    // with -v like GNUmakefile's mir2c-bench.
+    const mir2c_bench = b.addRunArtifact(mir2c_test);
+    mir2c_bench.addArg("-v");
+    bench_step.dependOn(&mir2c_bench.step);
 }
