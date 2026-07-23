@@ -50,6 +50,21 @@ if(UNIX)
 	target_link_libraries(mir m)
 endif()
 
+if(WIN32)
+  # MSVC's own CRT/SDK headers (stdio.h, stdlib.h, ...) live wherever vcvarsall
+  # set up $ENV{INCLUDE} for this toolchain -- c2mir.c's init_include_dirs only
+  # knows __APPLE__/__unix__ default locations, so without this, c2m compiling
+  # any C source that includes system headers can't find them. Mirrors
+  # GNUmakefile's ADDITIONAL_INCLUDE_PATH handling for the mingw route; the CI
+  # workflow runs ilammy/msvc-dev-cmd before configuring so $ENV{INCLUDE} is
+  # populated here. c2mir.c's ADDITIONAL_INCLUDE_PATH parsing already expects a
+  # ';'-separated list on _WIN32, matching $ENV{INCLUDE}'s own format.
+  if(DEFINED ENV{INCLUDE} AND NOT "$ENV{INCLUDE}" STREQUAL "")
+    string(REPLACE "\\" "\\\\" MIR_WIN_INCLUDE_PATH "$ENV{INCLUDE}")
+    target_compile_definitions(mir PRIVATE "ADDITIONAL_INCLUDE_PATH=\"${MIR_WIN_INCLUDE_PATH}\"")
+  endif()
+endif()
+
 # ------------------ LIBMIR -----------------------
 add_library(mir_static STATIC)
 target_link_libraries(mir_static PRIVATE mir)
