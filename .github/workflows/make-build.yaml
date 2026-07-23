@@ -24,15 +24,26 @@ jobs:
     steps:
     - name: Checkout
       uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
-    - name: Run Tests (Make)
+    - name: Build (Make)
       if: runner.os != 'Windows'
-      run: make -C src test
+      # test-all doesn't pull in interp-test/gen-test -- those are separate aggregate
+      # targets scripts/run_tests.py also needs binaries from (interp-test1..16,
+      # gen-test1..16, gen-loop-test, gen-sieve-test, gen-issue219-test, etc.)
+      run: make -C src test-all interp-test gen-test
     - name: Set up MSVC dev environment
       if: runner.os == 'Windows'
       uses: ilammy/msvc-dev-cmd@0b201ec74fa43914dc39ae48a89fd1d8cb592756 # v1.13.0
-    - name: Run Tests (CMake)
+    - name: Build (CMake)
       if: runner.os == 'Windows'
       run: |
         cmake -S src -B build -A x64 -DBUILD_TESTING=ON
         cmake --build build --config Release
-        python scripts/run_tests.py --build-dir build
+    # scripts/run_tests.py is the single, canonical test orchestrator: it runs the
+    # same broad suite on all 3 platforms against whichever build dir this OS's build
+    # step produced (make builds in-place under src/; CMake builds under build/).
+    - name: Run Tests (Python)
+      if: runner.os != 'Windows'
+      run: python3 scripts/run_tests.py --build-dir src
+    - name: Run Tests (Python)
+      if: runner.os == 'Windows'
+      run: python scripts/run_tests.py --build-dir build

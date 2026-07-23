@@ -1,9 +1,15 @@
 #!/usr/bin/env python3
 """Cross-platform test runner for MIR.
 
+This is the single, canonical test orchestrator for the make and CMake build routes:
+CI invokes it uniformly on Linux, macOS, and Windows against whichever build directory
+that platform's build step produced, so all three platforms run the same broad suite
+(previously Linux/macOS ran GNUmakefile's narrower `test` target while only Windows ran
+this script -- see docs/build.md).
+
 Runs all test suites (ADT tests, MIR utility tests, Interp/Gen tests, mir-bin-run,
 mir2c, c2m C-tests suite, and bootstrap tests) natively on Linux, macOS, and Windows.
-Can be run standalone, or invoked by GNU Make, CMake, Zig, or CI workflows.
+Can also be run standalone, or invoked by GNU Make, CMake, or Zig directly.
 """
 
 import argparse
@@ -28,6 +34,33 @@ if ARCH in ("x86_64", "amd64"):
     ARCH = "x86_64"
 elif ARCH in ("aarch64", "arm64"):
     ARCH = "aarch64"
+
+# CMake spells some of these targets differently than GNUmakefile's own binary names
+# (underscores instead of hyphens, historically copied from upstream's CMakeLists.txt).
+# This lets callers use one canonical (GNUmakefile-spelled) name and still find the
+# CMake-built binary.
+CMAKE_NAME_ALIASES = {
+    "varr-test": "varr_test",
+    "dlist-test": "dlist_test",
+    "bitmap-test": "bitmap_test",
+    "htab-test": "htab_test",
+    "reduce-test": "reduce_test",
+    "simplify-test": "simplify_test",
+    "scan-test": "scan_test",
+    "io-test": "io_test",
+    "run-test": "run_test",
+    "interp-test1": "interp_loop",
+    "interp-test2": "interp_loop_c",
+    "interp-test3": "interp_sieve",
+    "interp-test4": "interp_sieve_c",
+    "interp-test5": "interp_hi",
+    "interp-test6": "interp_args",
+    "interp-test7": "interp_args_c",
+    "gen-loop-test": "gen_loop",
+    "gen-sieve-test": "gen_sieve",
+    "readme-example-test": "readme_example",
+    "mir2c-test": "mir2c_test",
+}
 
 
 class TestResult:
@@ -89,19 +122,28 @@ class TestRunner:
         self.results: list[TestResult] = []
 
     def find_binary(self, name: str) -> Path:
-        exe_name = get_exe_name(name)
-        candidates = [
-            self.build_dir / exe_name,
-            self.build_dir / "bin" / exe_name,
-            self.build_dir / "Release" / exe_name,
-            self.build_dir / "Debug" / exe_name,
-            REPO_ROOT / exe_name,
-            SRC_DIR / exe_name,
+        # GNUmakefile places adt-tests/mir-tests binaries in their own subdirectories;
+        # CMake (and REPO_ROOT/SRC_DIR fallbacks) put everything flat.
+        search_dirs = [
+            self.build_dir,
+            self.build_dir / "bin",
+            self.build_dir / "Release",
+            self.build_dir / "Debug",
+            self.build_dir / "adt-tests",
+            self.build_dir / "mir-tests",
+            REPO_ROOT,
+            SRC_DIR,
         ]
-        for c in candidates:
-            if c.exists() and c.is_file():
-                return c
-        return candidates[0]
+        names = [name]
+        if name in CMAKE_NAME_ALIASES:
+            names.append(CMAKE_NAME_ALIASES[name])
+        for n in names:
+            exe_name = get_exe_name(n)
+            for d in search_dirs:
+                c = d / exe_name
+                if c.exists() and c.is_file():
+                    return c
+        return search_dirs[0] / get_exe_name(name)
 
     def record(self, result: TestResult):
         self.results.append(result)
@@ -266,9 +308,9 @@ class TestRunner:
         return TestResult("mir-bin-run-test", True)
 
     def run_bootstrap_tests(self):
-        if IS_WINDOWS or (sys.platform == "darwin" and ARCH == "aarch64"):
-            for tag in ["test0", "test1", "test"]:
-                self.record(TestResult(f"c2mir-bootstrap-{tag}", True, "skipped on macOS arm64 / Windows", skipped=True))
+        if IS_WINDOWS:
+            for tag in ["test0", "test1", "test", "test3"]:
+                self.record(TestResult(f"c2mir-bootstrap-{tag}", True, "skipped on Windows", skipped=True))
             return
 
         c2m_exe = self.find_binary("c2m")
@@ -285,12 +327,22 @@ class TestRunner:
 
         with tempfile.TemporaryDirectory() as tmpdir:
             tmppath = Path(tmpdir)
-            for mode, tag in [("-O0", "test0"), ("-O1", "test1"), ("", "test")]:
+            for mode, tag in [("-O0", "test0"), ("-O1", "test1"), ("", "test"), ("-O3", "test3")]:
                 bmir1 = tmppath / f"1_{tag}.bmir"
                 bmir2 = tmppath / f"2_{tag}.bmir"
                 mode_args = [mode] if mode else []
-                code1, _, err1 = run_cmd([str(c2m_exe), "-w"] + mode_args + [f"-I{SRC_DIR}"] + c2m_sources + ["-o", str(bmir1)])
-                code2, _, err2 = run_cmd([str(c2m_exe)] + mode_args + [str(bmir1), "-el", "-w"] + mode_args + [f"-I{SRC_DIR}"] + c2m_sources + ["-o", str(bmir2)])
+                code1, _, err1 = run_cmd(
+                    [str(c2m_exe), "-w", "-DMIR_BOOTSTRAP"] + mode_args + [f"-I{SRC_DIR}"] + c2m_sources + ["-o", str(bmir1)]
+                )
+                code2, _, err2 = run_cmd(
+                    [str(c2m_exe), "-DMIR_BOOTSTRAP"]
+                    + mode_args
+                    + [str(bmir1), "-el", "-w", "-DMIR_BOOTSTRAP"]
+                    + mode_args
+                    + [f"-I{SRC_DIR}"]
+                    + c2m_sources
+                    + ["-o", str(bmir2)]
+                )
                 if code1 == 0 and code2 == 0 and bmir1.exists() and bmir2.exists() and bmir1.read_bytes() == bmir2.read_bytes():
                     self.record(TestResult(f"c2mir-bootstrap-{tag}", True))
                 else:
@@ -309,8 +361,11 @@ class TestRunner:
             self.record(self.run_executable_test(util))
 
         # 3. Interp & Gen Tests
-        for interp in ["interp_loop", "interp_loop_c", "interp_sieve", "interp_sieve_c", "interp_hi", "interp_args", "interp_args_c"]:
+        for interp in ["interp-test1", "interp-test2", "interp-test3", "interp-test4", "interp-test5", "interp-test6", "interp-test7"]:
             self.record(self.run_executable_test(interp))
+
+        for gen in ["gen-loop-test", "gen-sieve-test", "gen-get-thunk-addr-test", "issue219"]:
+            self.record(self.run_executable_test(gen))
 
         run_test_exe = self.find_binary("run-test")
         if run_test_exe.exists():
@@ -318,7 +373,11 @@ class TestRunner:
                 if IS_WINDOWS and num in (11, 12):
                     continue
                 mir_fixture = str(TEST_DIR / "mir-tests" / f"test{num}.mir")
-                self.record(self.run_executable_test("run-test", ["-i", mir_fixture]))
+                # test1..7.mir have no `main` -- only test8..16.mir are meant to be
+                # run through run-test's interp mode (-i); test1..7's interp coverage
+                # comes from the dedicated interp_loop/interp_sieve/etc. binaries above.
+                if num >= 8:
+                    self.record(self.run_executable_test("run-test", ["-i", mir_fixture]))
                 flag = "-d" if num <= 7 else "-g"
                 self.record(self.run_executable_test("run-test", [flag, mir_fixture]))
 

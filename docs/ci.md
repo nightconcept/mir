@@ -7,11 +7,13 @@ or `mc` (plus manual `workflow_dispatch`); upstream's self-hosted-runner workflo
 runners — they'd otherwise hang for 24h and get force-cancelled.
 
 - **`make-build.yaml`**: the make/cmake route, on the same 3-platform matrix as `zig-build.yml`
-  below (`ubuntu-latest`/`windows-latest` x86_64, `macos-latest` arm64) via `make -C src test`
-  (Linux/macOS) or `cmake -S src -B build` + `ctest` (Windows). Also runs a separate `apple-aarch64-test` job on `macos-14` for direct
-  Apple Silicon coverage (GitHub's `macos-latest` arm64 runners aren't guaranteed to be Apple
-  Silicon specifically). This is a rename+merge of what were previously two files
-  (`multi-os-test.yml` + `apple-aarch64-test.yml`) — same triggers/jobs, just consolidated.
+  below (`ubuntu-latest`/`windows-latest` x86_64, `macos-latest` arm64). Each platform builds
+  with its native toolchain (`make -C src test-all` on Linux/macOS, `cmake -S src -B build` +
+  `cmake --build` on Windows), then all 3 hand off to `scripts/run_tests.py --build-dir <dir>`
+  as the single, canonical test orchestrator — see [Build & Test](build.md#testing). This is a
+  rename+merge of what were previously two files (`multi-os-test.yml` +
+  `apple-aarch64-test.yml`); the separate `apple-aarch64-test` job (`macos-14`, for direct Apple
+  Silicon coverage) was dropped in that merge, not carried forward.
 - **`zig-build.yml`**: the same 3-platform matrix, running `zig build test` natively per
   platform (not the cross-compiling `zbuild-all` — CI needs to actually execute the tests on
   each runner, and cross-compiled binaries can't run on the host that built them). Also runs

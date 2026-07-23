@@ -50,8 +50,46 @@ sources repointed at it. `BUILD_TESTING` option (default ON):
 ```sh
 cmake -S src -B build -DBUILD_TESTING=ON
 cmake --build build
-ctest --test-dir build --verbose --output-on-failure
+ctest --test-dir build --verbose --output-on-failure   # local/manual only, not what CI runs -- see Testing below
 ```
+
+## Testing (make/cmake routes)
+
+`scripts/run_tests.py` is the single, canonical test orchestrator for both the make and CMake
+routes — CI runs it uniformly on all 3 platforms (see [CI](ci.md)), rather than relying on
+GNUmakefile's own `test`/`test-all` targets or CTest separately per platform (that asymmetry —
+Linux/macOS on the narrower `make test`, Windows on this script — is exactly what it replaced).
+It finds built binaries under a `--build-dir` (checking common subdirectories for both build
+layouts: flat for CMake, `adt-tests/`/`mir-tests/` for GNUmakefile's in-place layout) and runs
+ADT tests, MIR utility/interp/gen tests, `mir-bin-run-test`, the full `c2m` C-tests battery
+(`-ei`/`-eg`/`-eb -eg`/`-O0`/`-O1`/`-O3`), and bootstrap self-compilation tests (`-DMIR_BOOTSTRAP`,
+`-O0`/`-O1`/default/`-O3`) — skipped only on Windows, since bootstrap has been verified to work
+fine on macOS arm64 despite an earlier, overly-cautious skip there.
+
+```sh
+make -C src test-all interp-test gen-test         # build everything run_tests.py needs (Linux/macOS)
+python3 scripts/run_tests.py --build-dir src      # against that in-place build
+python3 scripts/run_tests.py --build-dir build    # against a CMake build/ directory
+```
+
+Note `test-all` alone doesn't build the `interp-test`/`gen-test` binaries (those are separate
+GNUmakefile aggregate targets `test`/`test-all` don't depend on) — CI builds both explicitly.
+
+Because GNUmakefile and `src/CMakeLists.txt` historically named some test binaries differently
+(e.g. `varr-test` vs. CMake's `varr_test`), `run_tests.py` resolves both spellings via a
+`CMAKE_NAME_ALIASES` table rather than either build file being renamed — GNUmakefile stays
+upstream-compatible, and `CMakeLists.txt`'s own target names are left alone to minimize churn.
+New test binaries added to `CMakeLists.txt` should just use the GNUmakefile binary name directly
+(no alias needed) unless there's a reason to match CMake's older convention.
+
+CI still runs the native build first on each platform (`make -C src test-all` / `cmake --build`)
+before handing off to `run_tests.py` — on Linux/macOS this incidentally also runs GNUmakefile's
+own test recipes as a fast native pre-check, but `run_tests.py`'s exit code is what CI treats as
+authoritative for the broad suite.
+
+**Known gaps** (documented, not silently missing) vs. GNUmakefile's full `test-all`: the
+`l2m` tests (need `clang` to emit LLVM bitcode) and a few less-common bootstrap variants
+(`c2mir-bb-bootstrap-test`, `c2mir-parallel-bootstrap-test`, `c2mir-bootstrap-test4/5`).
 
 ## Zig (`build.zig`, repo root)
 

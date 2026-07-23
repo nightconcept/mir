@@ -94,6 +94,13 @@ add_executable (c2m "c2mir/c2mir-driver.c")
 target_include_directories(c2m PRIVATE ${PROJECT_SOURCE_DIR})
 target_link_libraries(c2m mir ${CMAKE_DL_LIBS} )
 
+# ------------------ MIR BIN RUN -------------------
+# Loads/runs .bmir files via dlopen'd std libs; mirrors GNUmakefile's mir-bin-run
+# target (src/mir-bin-run.c) -- scripts/run_tests.py's mir-bin-run-test needs this.
+add_executable (mir-bin-run "mir-bin-run.c")
+target_include_directories(mir-bin-run PRIVATE ${PROJECT_SOURCE_DIR})
+target_link_libraries(mir-bin-run mir ${CMAKE_DL_LIBS})
+
 # ------------------ MIR RUN ----------------------
 
 #add_executable (mir-run "mir-run.c")
@@ -258,6 +265,20 @@ target_link_libraries(gen_sieve mir)
 
 add_test(gen-test-loop gen_loop)
 add_test(gen-test-sieve gen_sieve)
+
+# scripts/run_tests.py's broad suite also exercises these two GNUmakefile gen-test
+# targets (gen-issue219-test, gen-test-get-thunk-addr); named to match its binary names.
+add_executable (issue219 "${TEST_DIR}/mir-tests/issue219.c")
+target_include_directories(issue219 PRIVATE ${PROJECT_SOURCE_DIR})
+target_compile_definitions(issue219 PRIVATE TEST_GEN_DEBUG=1 TEST_GEN_SIEVE)
+target_link_libraries(issue219 mir)
+
+add_executable (gen-get-thunk-addr-test "${TEST_DIR}/mir-tests/get-thunk-addr.c")
+target_include_directories(gen-get-thunk-addr-test PRIVATE ${PROJECT_SOURCE_DIR})
+target_link_libraries(gen-get-thunk-addr-test mir)
+
+add_test(gen-issue219-test issue219)
+add_test(gen-test-get-thunk-addr gen-get-thunk-addr-test)
 
 # ------------------ readme example test ----------------
 
