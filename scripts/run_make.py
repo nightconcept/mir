@@ -10,6 +10,7 @@ import sys
 from datetime import datetime, timezone
 from pathlib import Path
 
+from test_summary import summarize
 
 REPO_ROOT = Path(__file__).resolve().parent.parent
 OUT_DIR = REPO_ROOT / "out"
@@ -90,20 +91,20 @@ def main() -> None:
             args.target,
         ]
     else:
-        make_command = [
+        command = [
             "make",
             "-f",
             str(REPO_ROOT / "src" / "GNUmakefile"),
             f"SRC_DIR={REPO_ROOT / 'src'}",
             args.target,
         ]
-        if args.summary:
-            command = [str(REPO_ROOT / "scripts" / "test-summary.sh"), *make_command]
-        else:
-            command = make_command
 
     print(f"run directory: {run_dir}", flush=True)
     returncode = run_and_log(command, build_dir, log_path)
+    if args.summary:
+        summary = summarize(log_path.read_text(encoding="utf-8", errors="replace"))
+        if summary:
+            print(summary, flush=True)
     metadata = {
         "target": args.target,
         "command": command,

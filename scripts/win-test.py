@@ -20,11 +20,12 @@ Usage:
 """
 import argparse
 import os
-import re
 import shutil
 import subprocess
 import sys
 from pathlib import Path
+
+from test_summary import summarize
 
 REPO_ROOT = Path(__file__).resolve().parent.parent
 
@@ -93,11 +94,9 @@ def main():
     output = result.stdout + result.stderr
     print(output)
 
-    # Same aggregate accounting as scripts/test-summary.sh, no exemptions.
-    total = sum(int(n) for n in re.findall(r"Tests (\d+)", output))
-    failed = len(re.findall(r"\bFAIL\b", output))
-    if total:
-        print(f"test summary: {total - failed}/{total} test files passed")
+    summary = summarize(output)
+    if summary:
+        print(summary)
 
     sys.exit(result.returncode)
 
