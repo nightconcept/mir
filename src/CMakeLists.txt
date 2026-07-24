@@ -156,12 +156,15 @@ add_test(reduce-test reduce_test ${PROJECT_SOURCE_DIR}/c2mir/c2mir.c)
 
 # ------------------ MIR utility tests ------------------------
 add_executable (simplify_test "${TEST_DIR}/mir-tests/simplify.c")
+target_include_directories(simplify_test PRIVATE ${PROJECT_SOURCE_DIR})
 target_link_libraries(simplify_test mir)
 
 add_executable (scan_test "${TEST_DIR}/mir-tests/scan-test.c")
+target_include_directories(scan_test PRIVATE ${PROJECT_SOURCE_DIR})
 target_link_libraries(scan_test mir)
 
 add_executable (io_test "${TEST_DIR}/mir-tests/io.c")
+target_include_directories(io_test PRIVATE ${PROJECT_SOURCE_DIR})
 target_link_libraries(io_test mir)
 
 add_test(simplify-test simplify_test)
