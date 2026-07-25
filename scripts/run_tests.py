@@ -44,34 +44,22 @@ elif ARCH in ("aarch64", "arm64"):
 # through c2m against the MSVC toolchain, in the same spirit as zig-build.yml skipping the
 # whole runtests.sh c-tests suite on Windows (build.zig gates it behind `if (!is_windows)`).
 # Root causes, by group:
-#   * Win64 ABI: variadic args, `long double` (64-bit on Win64, tests assume 80-bit), and
-#     setjmp/longjmp (an MSVC intrinsic, not a libc call) -- va-*, vararg*, long-double-*,
-#     setjmp*, matrix-param, va-ld-stack, va-struct-args.
-#   * MSVC system headers: pulling in <stdio.h>/<stdlib.h>/<setjmp.h> drags in SAL-annotated
-#     UCRT/SDK headers (sal.h etc.) that use `#pragma`/`__declspec`/intrinsics c2m does not
-#     fully model -- the remaining stdio/enum/issue* tests.
-# Revisit if c2m gains Win64 ABI + MSVC-header support; drop entries as they start passing.
+#   * setjmp/longjmp is an MSVC intrinsic (_setjmp takes a hidden frame-pointer argument
+#     and cooperates with SEH unwinding), not a plain libc call c2m can emit -- setjmp*.
+#   * Direct calls to real UCRT entry points crash the JIT'd/interpreted code: fflush(stdout)
+#     alone faults with 0xC0000005. The printf family is unaffected because UCRT inlines it
+#     into __stdio_common_vfprintf. This is what printstr.c (putc/fputc) trips over, and it
+#     is MSVC-specific -- the MinGW-built c2m runs the same test fine.
+#   * issue253.c fails on every platform's c2m ("can not load symbol iteration"), not just
+#     Windows; it is listed here only because Windows CI is where it currently surfaces.
+# The rest of this list used to hold 50 files. They were not Win64-ABI limitations: an
+# MSVC-built c2m was emitting a broken <stdarg.h> (mirc_x86_64_stdarg.h gated on __WIN32,
+# which MSVC does not define) and had no answer for MSVC's __va_start intrinsic. Both are
+# fixed in src/c2mir/x86_64/, and those 46 files now pass.
 WINDOWS_UNSUPPORTED_C2M = {
-    "c-tests/gcc/20050131-1.c", "c-tests/gcc/920501-6.c", "c-tests/gcc/920810-1.c",
-    "c-tests/gcc/930513-1.c", "c-tests/gcc/960311-1.c", "c-tests/gcc/960311-2.c",
-    "c-tests/gcc/960311-3.c", "c-tests/gcc/enum-3.c", "c-tests/gcc/inst-check.c",
-    "c-tests/lacc/assignment-type.c", "c-tests/lacc/constant-expression.c",
-    "c-tests/lacc/initialize-call.c", "c-tests/lacc/initialize-object.c",
-    "c-tests/lacc/long-double-function.c", "c-tests/lacc/padded-initialization.c",
-    "c-tests/lacc/pointer-immediate.c", "c-tests/lacc/printstr.c",
-    "c-tests/lacc/string-conversion.c", "c-tests/lacc/vararg.c",
-    "c-tests/lacc/vararg-complex-1.c", "c-tests/lacc/vararg-complex-2.c",
-    "c-tests/mir/addr-3.mir",
-    "c-tests/new/bf1.c", "c-tests/new/bf2.c", "c-tests/new/bf3.c",
-    "c-tests/new/enum_test.c", "c-tests/new/interp.c", "c-tests/new/issue142.c",
-    "c-tests/new/issue18.c", "c-tests/new/issue186-1.c", "c-tests/new/issue186-2.c",
-    "c-tests/new/issue186-3.c", "c-tests/new/issue212.c", "c-tests/new/issue23.c",
-    "c-tests/new/issue241.c", "c-tests/new/issue253.c", "c-tests/new/issue361.c",
-    "c-tests/new/issue392.c", "c-tests/new/issue393.c", "c-tests/new/issue441.c",
-    "c-tests/new/issue456.c", "c-tests/new/issue68.c", "c-tests/new/matrix-param.c",
-    "c-tests/new/mike.c", "c-tests/new/negative-index32.c", "c-tests/new/ptr-to-array.c",
-    "c-tests/new/setjmp.c", "c-tests/new/setjmp2.c", "c-tests/new/va-ld-stack.c",
-    "c-tests/new/va-struct-args.c",
+    "c-tests/lacc/printstr.c",
+    "c-tests/new/issue253.c",
+    "c-tests/new/setjmp.c", "c-tests/new/setjmp2.c",
 }
 
 CMAKE_NAME_ALIASES = {
@@ -108,6 +96,38 @@ class TestResult:
 
 def get_exe_name(base: str) -> str:
     return f"{base}.exe" if IS_WINDOWS else base
+
+
+# The .expectrc fixtures were recorded from a POSIX shell, where $? is the exit
+# status truncated to 8 bits -- c-tests/lacc/constant-expression.c returns 512 and
+# was recorded as 0. Windows hands back the full 32-bit value, so compare modulo
+# 256 there. Abnormal terminations (NTSTATUS codes like 0xC0000409
+# STATUS_STACK_BUFFER_OVERRUN) are well above any real exit status and must keep
+# comparing raw, or a crash whose low byte happens to be 0 would read as a pass.
+NTSTATUS_FLOOR = 0x40000000
+
+
+def significant_stderr(err: str, limit: int = 600) -> str:
+    """Drop warning chatter so the actual error survives truncation.
+
+    Compiling anything that includes an MSVC system header emits hundreds of
+    'unknown pragma' warnings; a flat err[:200] showed only those and hid the
+    real diagnostic (e.g. 'can not load symbol __va_start') that follows them.
+    """
+    lines = [l for l in err.splitlines() if " warning -- " not in l]
+    dropped = len(err.splitlines()) - len(lines)
+    text = "\n".join(lines).strip()
+    if dropped:
+        text = f"[{dropped} warning line(s) omitted]\n{text}"
+    return text[:limit]
+
+
+def rc_matches(code: int, expect_rc: int) -> bool:
+    if code == expect_rc:
+        return True
+    if IS_WINDOWS and 0 <= code < NTSTATUS_FLOOR:
+        return code % 256 == expect_rc % 256
+    return False
 
 
 def run_cmd(cmd: list[str], cwd: Path = REPO_ROOT, env: dict = None, timeout: float = 30.0) -> tuple[int, str, str]:
@@ -253,8 +273,9 @@ class TestRunner:
             cmd.extend(mode_flag.split())
 
         code, out, err = run_cmd(cmd, cwd=test_file.parent)
-        if code != expect_rc:
-            return TestResult(test_name, False, f"return code {code} != expected {expect_rc}. Stderr: {err[:200]}")
+        if not rc_matches(code, expect_rc):
+            return TestResult(test_name, False,
+                              f"return code {code} != expected {expect_rc}. Stderr: {significant_stderr(err)}")
 
         if expect_out_file and expect_out_file.exists():
             diff = diff_text(expect_out_file.read_text(), out, fromfile=str(expect_out_file), tofile="stdout")
