@@ -132,9 +132,17 @@ static const char *lib_suffix = ".dylib";
 #endif
 
 #ifdef _WIN32
+/* Search the C runtime c2m/mir-bin-run was built against first -- see the longer note on the
+   msvcrt.dll/ucrtbase.dll split in c2mir/c2mir-driver.c.  */
+#if defined(_UCRT) || defined(_MSC_VER)
+static lib_t std_libs[] = {{"C:\\Windows\\System32\\ucrtbase.dll", NULL},
+                           {"C:\\Windows\\System32\\kernel32.dll", NULL},
+                           {"C:\\Windows\\System32\\msvcrt.dll", NULL}};
+#else
 static lib_t std_libs[] = {{"C:\\Windows\\System32\\msvcrt.dll", NULL},
                            {"C:\\Windows\\System32\\kernel32.dll", NULL},
                            {"C:\\Windows\\System32\\ucrtbase.dll", NULL}};
+#endif
 static const char *std_lib_dirs[] = {"C:\\Windows\\System32"};
 static const char *lib_suffix = ".dll";
 #define dlopen(n, f) LoadLibrary (n)

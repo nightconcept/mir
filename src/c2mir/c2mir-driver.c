@@ -182,10 +182,24 @@ static const union {
   double value;
 } c2m_infl = {0x7ff0000000000000ULL}, c2m_qnan = {0x7ff8000000000000ULL};
 
+/* Windows has two coexisting C runtimes, msvcrt.dll (legacy) and ucrtbase.dll, each with its
+   own FILE table.  import_resolver takes the first hit, so whichever comes first here wins
+   every name both export -- and mixing them is silently fatal: <stdio.h> resolves `stdout` to
+   __acrt_iob_func, a UCRT-only symbol, so a FILE * from ucrtbase would be handed to msvcrt's
+   putc/fflush.  List the runtime c2m itself was built against first and keep the other only as
+   a fallback for names it alone exports.  _UCRT is defined by the UCRT headers, so this also
+   covers a MinGW build using the ucrt64 runtime.  */
+#if defined(_UCRT) || defined(_MSC_VER)
+static lib_t std_libs[] = {{"C:\\Windows\\System32\\ucrtbase.dll", NULL},
+                           {"C:\\Windows\\System32\\kernel32.dll", NULL},
+                           {"C:\\Windows\\System32\\msvcrt.dll", NULL},
+                           {"libwinpthread-1.dll", NULL}};
+#else
 static lib_t std_libs[] = {{"C:\\Windows\\System32\\msvcrt.dll", NULL},
                            {"C:\\Windows\\System32\\kernel32.dll", NULL},
                            {"C:\\Windows\\System32\\ucrtbase.dll", NULL},
                            {"libwinpthread-1.dll", NULL}};
+#endif
 static const char *std_lib_dirs[] = {"C:\\Windows\\System32"};
 static const char *lib_suffix = ".dll";
 #define dlopen(n, f) LoadLibrary (n)
