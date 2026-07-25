@@ -71,6 +71,8 @@ static char vadefs_str[]
     "#define _crt_va_end(ap) __crt_va_end (ap)\n"
     "#endif\n";
 
+#endif
+
 /* MSVC's <setjmp.h> does `#define setjmp _setjmp` and declares _setjmp as taking the
    jmp_buf alone, because on x64 _setjmp is a compiler intrinsic: cl.exe passes the
    caller's frame pointer as a hidden second argument, which _setjmp stores in
@@ -84,7 +86,18 @@ static char vadefs_str[]
    That is both what C requires of setjmp/longjmp and the only thing JIT-generated
    code can support, having no unwind info to unwind through.  jmp_buf must keep
    UCRT's shape (16 x 16 bytes, 16-byte aligned) since ucrtbase writes it -- the
-   array-of-SETJMP_FLOAT128 spelling is what gets the alignment. */
+   array-of-SETJMP_FLOAT128 spelling is what gets the alignment.
+
+   This is not MSVC-only: MinGW's <setjmp.h> needs the same replacement whenever it
+   resolves against UCRT (zig's bundled mingw-w64 headers, ucrt64 msys2), where it
+   spells the call `_setjmp` -> `__intrinsic_setjmpex`.  That name reaches
+   MIR_load_external as `__intrinsic_setjmpex`, which does not match the
+   setjmp/_setjmp names mir.c records setjmp_addr for, so the interpreter's special
+   CALL handling never fires: longjmp restores the FFI shim's native frame and
+   interpretation resumes at the wrong point (-ei only; -eg/-O have real frames).
+   An msvcrt-targeted MinGW emits plain `_setjmp` and happened to work.  Registering
+   this header for every _WIN32 build makes all four combinations emit the one call
+   shape -- `_setjmp (buf, 0)` -- that both the interpreter and the generator handle. */
 static char setjmp_str[]
   = "#ifndef _INC_SETJMP\n"
     "#define _INC_SETJMP\n"
@@ -99,7 +112,6 @@ static char setjmp_str[]
     "void longjmp (jmp_buf, int);\n"
     "#define setjmp(buf) _setjmp ((buf), 0)\n"
     "#endif\n";
-#endif
 
 static char x86intrin_str[] = "#define __readgsqword(offset) 0ULL\n";
 static char emmintrin_str[] = "";
@@ -112,8 +124,8 @@ static string_include_t standard_includes[] = {{NULL, mirc},
                                                {"mm_malloc.h", mm_malloc_str},
 #ifdef _MSC_VER
                                                {"vadefs.h", vadefs_str},
-                                               {"setjmp.h", setjmp_str},
 #endif
+                                               {"setjmp.h", setjmp_str},
                                                {"x86intrin.h", x86intrin_str},
                                                {"emmintrin.h", emmintrin_str},
 #endif
