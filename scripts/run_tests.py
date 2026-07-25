@@ -39,29 +39,6 @@ elif ARCH in ("aarch64", "arm64"):
 # (underscores instead of hyphens, historically copied from upstream's CMakeLists.txt).
 # This lets callers use one canonical (GNUmakefile-spelled) name and still find the
 # CMake-built binary.
-# c2m C-tests that cannot run on Windows and are skipped there (keyed by TEST_DIR-relative
-# posix path). These are not build failures -- they are limitations of compiling/running C
-# through c2m against the MSVC toolchain, in the same spirit as zig-build.yml skipping the
-# whole runtests.sh c-tests suite on Windows (build.zig gates it behind `if (!is_windows)`).
-# Root causes, by group:
-#   * setjmp/longjmp is an MSVC intrinsic (_setjmp takes a hidden frame-pointer argument
-#     and cooperates with SEH unwinding), not a plain libc call c2m can emit -- setjmp*.
-#   * Direct calls to real UCRT entry points crash the JIT'd/interpreted code: fflush(stdout)
-#     alone faults with 0xC0000005. The printf family is unaffected because UCRT inlines it
-#     into __stdio_common_vfprintf. This is what printstr.c (putc/fputc) trips over, and it
-#     is MSVC-specific -- the MinGW-built c2m runs the same test fine.
-#   * issue253.c fails on every platform's c2m ("can not load symbol iteration"), not just
-#     Windows; it is listed here only because Windows CI is where it currently surfaces.
-# The rest of this list used to hold 50 files. They were not Win64-ABI limitations: an
-# MSVC-built c2m was emitting a broken <stdarg.h> (mirc_x86_64_stdarg.h gated on __WIN32,
-# which MSVC does not define) and had no answer for MSVC's __va_start intrinsic. Both are
-# fixed in src/c2mir/x86_64/, and those 46 files now pass.
-WINDOWS_UNSUPPORTED_C2M = {
-    "c-tests/lacc/printstr.c",
-    "c-tests/new/issue253.c",
-    "c-tests/new/setjmp.c", "c-tests/new/setjmp2.c",
-}
-
 CMAKE_NAME_ALIASES = {
     "varr-test": "varr_test",
     "dlist-test": "dlist_test",
@@ -232,9 +209,6 @@ class TestRunner:
 
         if "-eb" in mode_flag and "lref" in test_file.name:
             return TestResult(test_name, True, "skipped (lref not supported in -eb mode)", skipped=True)
-
-        if IS_WINDOWS and test_file.relative_to(TEST_DIR).as_posix() in WINDOWS_UNSUPPORTED_C2M:
-            return TestResult(test_name, True, "skipped (unsupported on Windows)", skipped=True)
 
         disable_file = find_test_file_attr(test_file, ".disable")
         if disable_file:
