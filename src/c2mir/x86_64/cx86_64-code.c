@@ -70,6 +70,35 @@ static char vadefs_str[]
     "#define _crt_va_arg(ap, t) __crt_va_arg (ap, t)\n"
     "#define _crt_va_end(ap) __crt_va_end (ap)\n"
     "#endif\n";
+
+/* MSVC's <setjmp.h> does `#define setjmp _setjmp` and declares _setjmp as taking the
+   jmp_buf alone, because on x64 _setjmp is a compiler intrinsic: cl.exe passes the
+   caller's frame pointer as a hidden second argument, which _setjmp stores in
+   jmp_buf's leading Frame field.  c2m has no such intrinsic, so it emitted a one-
+   argument call and left Frame holding whatever was in rdx; longjmp then took that
+   for a real frame and handed it to RtlUnwindEx, faulting with STATUS_STACK_OVERFLOW
+   in every -eg/-O mode (the interpreter survived only by accident).
+
+   Pass an explicit 0 instead.  A zero Frame is the documented "do not unwind" case:
+   longjmp restores the saved registers directly rather than running an SEH unwind.
+   That is both what C requires of setjmp/longjmp and the only thing JIT-generated
+   code can support, having no unwind info to unwind through.  jmp_buf must keep
+   UCRT's shape (16 x 16 bytes, 16-byte aligned) since ucrtbase writes it -- the
+   array-of-SETJMP_FLOAT128 spelling is what gets the alignment. */
+static char setjmp_str[]
+  = "#ifndef _INC_SETJMP\n"
+    "#define _INC_SETJMP\n"
+    "#ifndef _JMP_BUF_DEFINED\n"
+    "#define _JMP_BUF_DEFINED\n"
+    "typedef struct _SETJMP_FLOAT128 { unsigned long long Part[2]; } SETJMP_FLOAT128;\n"
+    "#define _JBLEN 16\n"
+    "typedef SETJMP_FLOAT128 _JBTYPE;\n"
+    "typedef _JBTYPE jmp_buf[_JBLEN];\n"
+    "#endif\n"
+    "int _setjmp (jmp_buf, void *);\n"
+    "void longjmp (jmp_buf, int);\n"
+    "#define setjmp(buf) _setjmp ((buf), 0)\n"
+    "#endif\n";
 #endif
 
 static char x86intrin_str[] = "#define __readgsqword(offset) 0ULL\n";
@@ -83,6 +112,7 @@ static string_include_t standard_includes[] = {{NULL, mirc},
                                                {"mm_malloc.h", mm_malloc_str},
 #ifdef _MSC_VER
                                                {"vadefs.h", vadefs_str},
+                                               {"setjmp.h", setjmp_str},
 #endif
                                                {"x86intrin.h", x86intrin_str},
                                                {"emmintrin.h", emmintrin_str},
