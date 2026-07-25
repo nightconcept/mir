@@ -53,15 +53,16 @@ cmake --build build
 ctest --test-dir build --verbose --output-on-failure   # local/manual only, not what CI runs -- see Testing below
 ```
 
-## Testing (make/cmake routes)
+## Testing (all 3 routes)
 
-`scripts/run_tests.py` is the single, canonical test orchestrator for both the make and CMake
-routes — CI runs it uniformly on all 3 platforms (see [CI](ci.md)), rather than relying on
-GNUmakefile's own `test`/`test-all` targets or CTest separately per platform (that asymmetry —
-Linux/macOS on the narrower `make test`, Windows on this script — is exactly what it replaced).
-It finds built binaries under a `--build-dir` (checking common subdirectories for both build
-layouts: flat for CMake, `adt-tests/`/`mir-tests/` for GNUmakefile's in-place layout) and runs
-ADT tests, MIR utility/interp/gen tests, `mir-bin-run-test`, the full `c2m` C-tests battery
+`scripts/run_tests.py` is the single, canonical test orchestrator across make, CMake, *and*
+Zig — CI runs it uniformly on all 3 platforms for all 3 build routes (see [CI](ci.md)), rather
+than relying on each build system's own narrower `test` target/CTest/`zig build test` separately
+(that asymmetry — Linux/macOS on `make test`, Windows on this script, Zig on its own manifest —
+is exactly what it replaced). It finds built binaries under a `--build-dir` (checking common
+subdirectories across all three layouts: flat for CMake and Zig's `zig-out/bin`,
+`adt-tests/`/`mir-tests/` for GNUmakefile's in-place layout) and runs ADT tests, MIR
+utility/interp/gen tests, `mir-bin-run-test`, the full `c2m` C-tests battery
 (`-ei`/`-eg`/`-eb -eg`/`-O0`/`-O1`/`-O3`), and bootstrap self-compilation tests (`-DMIR_BOOTSTRAP`,
 `-O0`/`-O1`/default/`-O3`) — skipped only on Windows, since bootstrap has been verified to work
 fine on macOS arm64 despite an earlier, overly-cautious skip there.
@@ -70,36 +71,51 @@ fine on macOS arm64 despite an earlier, overly-cautious skip there.
 make -C src test-all interp-test gen-test         # build everything run_tests.py needs (Linux/macOS)
 python3 scripts/run_tests.py --build-dir src      # against that in-place build
 python3 scripts/run_tests.py --build-dir build    # against a CMake build/ directory
+python3 scripts/run_tests.py --build-dir zig-out  # against a `zig build` output tree
 ```
 
 Note `test-all` alone doesn't build the `interp-test`/`gen-test` binaries (those are separate
 GNUmakefile aggregate targets `test`/`test-all` don't depend on) — CI builds both explicitly.
 
-Because GNUmakefile and `src/CMakeLists.txt` historically named some test binaries differently
-(e.g. `varr-test` vs. CMake's `varr_test`), `run_tests.py` resolves both spellings via a
-`CMAKE_NAME_ALIASES` table rather than either build file being renamed — GNUmakefile stays
-upstream-compatible, and `CMakeLists.txt`'s own target names are left alone to minimize churn.
-New test binaries added to `CMakeLists.txt` should just use the GNUmakefile binary name directly
-(no alias needed) unless there's a reason to match CMake's older convention.
+Because GNUmakefile, `src/CMakeLists.txt`, and `build.zig`/`test/tests.json` sometimes name the
+same test binary differently (e.g. `varr-test` vs. CMake's `varr_test`, or the 4 `gen-*` cases
+where `tests.json` uses GNUmakefile's *target* name rather than its binary basename),
+`run_tests.py` resolves the alternate spellings via `CMAKE_NAME_ALIASES`/`ZIG_NAME_ALIASES`
+tables rather than any build file being renamed — GNUmakefile stays upstream-compatible, and the
+other two are left alone to minimize churn. New test binaries should just use the GNUmakefile
+binary name directly (no alias needed) unless there's a reason to match an existing convention.
 
-CI still runs the native build first on each platform (`make -C src test-all` / `cmake --build`)
-before handing off to `run_tests.py` — on Linux/macOS this incidentally also runs GNUmakefile's
-own test recipes as a fast native pre-check, but `run_tests.py`'s exit code is what CI treats as
-authoritative for the broad suite.
+CI still runs the native build first on each platform (`make -C src test-all` / `cmake --build` /
+`zig build`) before handing off to `run_tests.py` — on Linux/macOS the make route incidentally
+also runs GNUmakefile's own test recipes as a fast native pre-check, but `run_tests.py`'s exit
+code is what CI treats as authoritative for the broad suite on all 3 build routes.
 
 **Known gaps** (documented, not silently missing) vs. GNUmakefile's full `test-all`: the
 `l2m` tests (need `clang` to emit LLVM bitcode) and a few less-common bootstrap variants
-(`c2mir-bb-bootstrap-test`, `c2mir-parallel-bootstrap-test`, `c2mir-bootstrap-test4/5`).
+(`c2mir-bb-bootstrap-test`, `c2mir-parallel-bootstrap-test`, `c2mir-bootstrap-test4/5`). On the
+Zig route specifically, Windows currently fails 3 of 6593: `setjmp.c`/`setjmp2.c` (`-ei` mode --
+the `_setjmp` frame-argument fix in `src/c2mir/x86_64/cx86_64-code.c` only registers its
+corrected `setjmp.h` for `_MSC_VER`; zig's mingw-w64 headers take a different, not-yet-fixed
+path) and `jcall.c` (`-eb -eg` mode, a genuine crash not yet root-caused).
 
 ## Zig (`build.zig`, repo root)
 
 A parallel build added for this fork's overhaul, reaching parity with the tool set the
-make/cmake routes produce (libmir static+shared, `c2m`, `mir-bin-run`, `m2b`, `b2m`, `b2ctab`)
-plus a `zig build test` step. `mir.c`/`mir-gen.c` `#include` their own per-target file internally
-(selected by `#ifdef` on the compile target's arch), so `build.zig` never enumerates per-arch
-sources — it just compiles `mir.c`/`mir-gen.c`/`c2mir/c2mir.c` as ordinary C translation units.
+make/cmake routes produce (libmir static+shared, `c2m`, `mir-bin-run`, `m2b`, `b2m`, `b2ctab`),
+installing every test binary it builds to `zig-out/bin` so `scripts/run_tests.py` (see above) can
+run the same broad suite against it that make/CMake get. `mir.c`/`mir-gen.c` `#include` their own
+per-target file internally (selected by `#ifdef` on the compile target's arch), so `build.zig`
+never enumerates per-arch sources — it just compiles `mir.c`/`mir-gen.c`/`c2mir/c2mir.c` as
+ordinary C translation units.
 
-`zig build test` covers two kinds of cases:
+Because `c2mir.c`'s `init_include_dirs` only knows `__APPLE__`/`__unix__` default system-header
+locations, `build.zig` also derives an `ADDITIONAL_INCLUDE_PATH` define per target the same way
+GNUmakefile (mingw-gcc/`xcrun`) and `CMakeLists.txt` (MSVC's `$ENV{INCLUDE}`) do, just from what
+Zig itself uses: its own bundled mingw-w64 headers on Windows, the host Xcode SDK via `xcrun` on
+macOS, nothing extra on Linux.
+
+`zig build test` (`just zbuild-test`) remains as a fast local smoke check, covering two kinds of
+cases:
 - Hand-written in `build.zig` itself: readme-example-test, mir2c-test, mir-bin-run-test across
   all 4 dispatch modes, c2mir-simple-test.
 - Data-driven from `test/tests.json` (parsed at build-configure time via `addManifestTests` in
@@ -109,10 +125,8 @@ sources — it just compiles `mir.c`/`mir-gen.c`/`c2mir/c2mir.c` as ordinary C t
   this manifest's case names against `src/GNUmakefile`'s own targets in CI so the two can't
   silently drift — see `test/README.md`.
 
-**Not yet covered** (documented gap, not silently missing): the `-O0`/`-O1`/`-O3`
-`runtests.sh` variants and the 6 `c2mir-bootstrap-*` self-compilation tests `make test-all`
-runs — bootstrap needs `build.zig` to recompile MIR's own sources through `c2m` mid-build,
-real new plumbing rather than another manifest entry.
+CI itself no longer runs `zig build test` — see "Testing (all 3 routes)" above for the
+`run_tests.py`-driven suite that replaced it as the authoritative gate.
 
 - **Build (host only)**: `just zbuild`
 - **Test (host only)**: `just zbuild-test`

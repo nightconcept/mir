@@ -14,6 +14,47 @@ const cflags: []const []const u8 = &.{
     "-fsigned-char",
 };
 
+// c2mir.c's init_include_dirs only knows __APPLE__/__unix__ default system-header
+// locations (see its ADDITIONAL_INCLUDE_PATH handling) -- without this, a zig-built
+// c2m compiling any C source that includes system headers (stdio.h, ...) can't find
+// them. GNUmakefile derives the same path from mingw-gcc/xcrun; CMakeLists.txt derives
+// it from MSVC's $ENV{INCLUDE}. Neither applies to zig's own bundled toolchain, so this
+// derives it from what zig itself uses for the compile target: its bundled mingw-w64
+// headers on Windows, the host Xcode SDK (via `xcrun`, same as GNUmakefile's Darwin
+// branch) on macOS. Linux needs nothing extra -- c2mir.c's __unix__ defaults suffice,
+// matching GNUmakefile leaving ADDITIONAL_INCLUDE_PATH empty there too.
+fn additionalIncludePath(b: *std.Build, target: std.Build.ResolvedTarget) ?[]const u8 {
+    return switch (target.result.os.tag) {
+        .windows => b.fmt("{s}/libc/include/any-windows-any", .{b.graph.zig_lib_directory.path orelse "."}),
+        .macos => blk: {
+            const result = std.process.run(b.allocator, b.graph.io, .{
+                .argv = &.{ "xcrun", "--show-sdk-path" },
+            }) catch break :blk null;
+            if (result.term != .exited or result.term.exited != 0) break :blk null;
+            const trimmed = std.mem.trim(u8, result.stdout, " \t\r\n");
+            break :blk if (trimmed.len == 0) null else b.fmt("{s}/usr/include", .{trimmed});
+        },
+        else => null,
+    };
+}
+
+// Doubles backslashes so a Windows path survives being embedded as a C string literal
+// in a -D define (a lone `\U`/`\D`/... in the macro body would be an invalid escape).
+fn cStringEscape(b: *std.Build, path: []const u8) []const u8 {
+    var out: std.ArrayList(u8) = .empty;
+    for (path) |c| {
+        if (c == '\\') out.append(b.allocator, '\\') catch @panic("OOM");
+        out.append(b.allocator, c) catch @panic("OOM");
+    }
+    return out.toOwnedSlice(b.allocator) catch @panic("OOM");
+}
+
+fn coreCflags(b: *std.Build, target: std.Build.ResolvedTarget) []const []const u8 {
+    const include_path = additionalIncludePath(b, target) orelse return cflags;
+    const define = b.fmt("-DADDITIONAL_INCLUDE_PATH=\"{s}\"", .{cStringEscape(b, include_path)});
+    return std.mem.concat(b.allocator, []const u8, &.{ cflags, &.{define} }) catch @panic("OOM");
+}
+
 fn addCoreModule(b: *std.Build, target: std.Build.ResolvedTarget, optimize: std.builtin.OptimizeMode) *std.Build.Module {
     const mod = b.createModule(.{
         .target = target,
@@ -25,7 +66,7 @@ fn addCoreModule(b: *std.Build, target: std.Build.ResolvedTarget, optimize: std.
     mod.addCSourceFiles(.{
         .root = b.path("src"),
         .files = &.{ "mir.c", "mir-gen.c", "c2mir/c2mir.c" },
-        .flags = cflags,
+        .flags = coreCflags(b, target),
     });
     return mod;
 }
@@ -114,6 +155,7 @@ fn addManifestTests(
 
     for (manifest.adt_tests) |case| {
         const exe = addManifestTestExe(b, target, optimize, null, case.name, case.source, &.{});
+        b.installArtifact(exe);
         const run = b.addRunArtifact(exe);
         for (case.run_args) |arg| run.addFileArg(b.path(arg));
         test_step.dependOn(&run.step);
@@ -121,18 +163,21 @@ fn addManifestTests(
 
     for (manifest.mir_utility_tests) |case| {
         const exe = addManifestTestExe(b, target, optimize, core_lib, case.name, case.source, &.{});
+        b.installArtifact(exe);
         const run = b.addRunArtifact(exe);
         test_step.dependOn(&run.step);
     }
 
     for (manifest.interp_tests) |case| {
         const exe = addManifestTestExe(b, target, optimize, core_lib, case.name, case.source, case.defines);
+        b.installArtifact(exe);
         const run = b.addRunArtifact(exe);
         test_step.dependOn(&run.step);
     }
 
     for (manifest.gen_tests) |case| {
         const exe = addManifestTestExe(b, target, optimize, core_lib, case.name, case.source, case.defines);
+        b.installArtifact(exe);
         const run = b.addRunArtifact(exe);
         test_step.dependOn(&run.step);
     }
@@ -140,6 +185,7 @@ fn addManifestTests(
     // run_test_mir_cases all share one run-test executable (mir-tests/run-test.c), invoked
     // repeatedly with different dispatch flags and .mir fixtures, matching GNUmakefile.
     const run_test_exe = addManifestTestExe(b, target, optimize, core_lib, "run-test", "mir-tests/run-test.c", &.{});
+    b.installArtifact(run_test_exe);
     for (manifest.run_test_mir_cases) |case| {
         if (case.skip_on_windows and is_windows) continue;
         const run = b.addRunArtifact(run_test_exe);
@@ -228,6 +274,7 @@ pub fn build(b: *std.Build) void {
         .flags = cflags ++ &[_][]const u8{"-DTEST_MIR2C"},
     });
     const mir2c_test = b.addExecutable(.{ .name = "mir2c-test", .root_module = mir2c_test_mod });
+    b.installArtifact(mir2c_test);
 
     // ---- readme-example-test, matching GNUmakefile's readme-example-test ----
     // readme-example.c lives in test/mir-tests/ (sibling of src/, see test/README.md), not src/.
@@ -244,6 +291,7 @@ pub fn build(b: *std.Build) void {
         .flags = cflags,
     });
     const readme_example_test = b.addExecutable(.{ .name = "readme-example-test", .root_module = readme_mod });
+    b.installArtifact(readme_example_test);
 
     // ---- test step: parity subset of `make test` (readme-example-test, mir-bin-run-test, c2mir-simple-test) ----
     const test_step = b.step("test", "Run the core test suite (readme-example, mir-bin-run, c2mir-simple)");

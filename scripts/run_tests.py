@@ -62,6 +62,16 @@ CMAKE_NAME_ALIASES = {
     "mir2c-test": "mir2c_test",
 }
 
+# build.zig's test/tests.json manifest names these 4 gen-tests after GNUmakefile's
+# *target* names rather than the binary basenames GNUmakefile actually produces (and
+# that this script otherwise looks for) -- see test/tests.json's gen_tests entries.
+ZIG_NAME_ALIASES = {
+    "gen-loop-test": "gen-test-loop",
+    "gen-sieve-test": "gen-test-sieve",
+    "issue219": "gen-issue219-test",
+    "gen-get-thunk-addr-test": "gen-test-get-thunk-addr",
+}
+
 
 class TestResult:
     def __init__(self, name: str, passed: bool, message: str = "", skipped: bool = False):
@@ -169,6 +179,8 @@ class TestRunner:
         names = [name]
         if name in CMAKE_NAME_ALIASES:
             names.append(CMAKE_NAME_ALIASES[name])
+        if name in ZIG_NAME_ALIASES:
+            names.append(ZIG_NAME_ALIASES[name])
         for n in names:
             exe_name = get_exe_name(n)
             for d in search_dirs:

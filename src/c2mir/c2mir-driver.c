@@ -475,6 +475,23 @@ float __nan (void) {
 }
 #endif
 
+#if defined(_WIN32) && defined(_UCRT)
+/* UCRT's <stdio.h> expands printf/scanf et al. to __stdio_common_vfprintf/vfscanf calls
+   carrying a `unsigned __int64 *` "local options" flags word, via
+   __local_stdio_printf_options()/__local_stdio_scanf_options() (see corecrt_stdio_config.h).
+   Unlike printf/vfprintf themselves, those two are never exported by any system DLL --
+   they're meant to be statically linked per-module, each giving its own translation unit a
+   private flags slot (hence "local"). A JIT-interpreted program's own printf/scanf calls hit
+   this same macro expansion (it comes from the system header, not from c2mir's own bundled
+   ones -- c2mir ships no stdio.h of its own), so import_resolver needs to hand out a real
+   pointer here rather than fail the dlsym lookup. Zero flags means default/standard behavior,
+   the same as a fresh per-module instance would start with; nothing in the test suite calls
+   the setter APIs that would mutate this, so one shared static slot is equivalent. */
+static unsigned __int64 c2m_local_printf_options, c2m_local_scanf_options;
+static unsigned __int64 *c2m_local_stdio_printf_options (void) { return &c2m_local_printf_options; }
+static unsigned __int64 *c2m_local_stdio_scanf_options (void) { return &c2m_local_scanf_options; }
+#endif
+
 static void *import_resolver (const char *name) {
   void *handler, *sym = NULL;
 #ifdef _WIN32
@@ -502,6 +519,10 @@ static void *import_resolver (const char *name) {
             && (huge_import = dlsym (handler, "_HUGE")) != NULL)
           return &huge_import;
     }
+#ifdef _UCRT
+    if (strcmp (name, "__local_stdio_printf_options") == 0) return c2m_local_stdio_printf_options;
+    if (strcmp (name, "__local_stdio_scanf_options") == 0) return c2m_local_stdio_scanf_options;
+#endif
 #ifdef __MINGW32__
     if (strcmp (name, "__mingw_vsnprintf") == 0) return __mingw_vsnprintf;
     if (strcmp (name, "__mingw_vsprintf") == 0) return __mingw_vsprintf;

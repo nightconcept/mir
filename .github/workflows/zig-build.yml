@@ -31,5 +31,14 @@ jobs:
     - name: Check Test Manifest Matches GNUmakefile
       if: runner.os != 'Windows'
       run: python3 scripts/check-test-manifest.py
-    - name: Run Tests
-      run: zig build test
+    - name: Build (Zig)
+      run: zig build
+    # scripts/run_tests.py is the single, canonical test orchestrator shared with
+    # make-build.yaml: it runs the same broad suite on all 3 platforms against
+    # whichever build dir this OS's build step produced (zig installs to zig-out/).
+    - name: Run Tests (Python)
+      if: runner.os != 'Windows'
+      run: python3 scripts/run_tests.py --build-dir zig-out
+    - name: Run Tests (Python)
+      if: runner.os == 'Windows'
+      run: python scripts/run_tests.py --build-dir zig-out

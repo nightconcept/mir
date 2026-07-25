@@ -14,11 +14,13 @@ runners — they'd otherwise hang for 24h and get force-cancelled.
   rename+merge of what were previously two files (`multi-os-test.yml` +
   `apple-aarch64-test.yml`); the separate `apple-aarch64-test` job (`macos-14`, for direct Apple
   Silicon coverage) was dropped in that merge, not carried forward.
-- **`zig-build.yml`**: the same 3-platform matrix, running `zig build test` natively per
-  platform (not the cross-compiling `zbuild-all` — CI needs to actually execute the tests on
-  each runner, and cross-compiled binaries can't run on the host that built them). Also runs
+- **`zig-build.yml`**: the same 3-platform matrix, running `zig build` natively per platform
+  (not the cross-compiling `zbuild-all` — CI needs to actually execute the tests on each runner,
+  and cross-compiled binaries can't run on the host that built them), then handing off to
+  `scripts/run_tests.py --build-dir zig-out` — the same canonical orchestrator `make-build.yaml`
+  uses, see [Build & Test](build.md#testing-all-3-routes). Also runs
   `scripts/check-test-manifest.py` (non-Windows) first, which fails the job if `test/tests.json`
-  (the data `build.zig`'s test step reads — see `test/README.md`) and `src/GNUmakefile`'s own
-  targets have drifted apart.
+  (the data `build.zig`'s local-smoke-check `test` step reads — see `test/README.md`) and
+  `src/GNUmakefile`'s own targets have drifted apart.
 - **`multi-os-bench.yml`**: manual-only (`workflow_dispatch`) performance benchmarks via
   `make bench`, on ubuntu-latest x86_64 and macos-latest arm64. No zig equivalent yet.
