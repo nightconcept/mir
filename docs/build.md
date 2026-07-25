@@ -92,11 +92,23 @@ code is what CI treats as authoritative for the broad suite on all 3 build route
 
 **Known gaps** (documented, not silently missing) vs. GNUmakefile's full `test-all`: the
 `l2m` tests (need `clang` to emit LLVM bitcode) and a few less-common bootstrap variants
-(`c2mir-bb-bootstrap-test`, `c2mir-parallel-bootstrap-test`, `c2mir-bootstrap-test4/5`). On the
-Zig route specifically, Windows currently fails 3 of 6593: `setjmp.c`/`setjmp2.c` (`-ei` mode --
-the `_setjmp` frame-argument fix in `src/c2mir/x86_64/cx86_64-code.c` only registers its
-corrected `setjmp.h` for `_MSC_VER`; zig's mingw-w64 headers take a different, not-yet-fixed
-path) and `jcall.c` (`-eb -eg` mode, a genuine crash not yet root-caused).
+(`c2mir-bb-bootstrap-test`, `c2mir-parallel-bootstrap-test`, `c2mir-bootstrap-test4/5`). All 3
+build routes now pass with 0 failures on Windows -- the Zig and MSVC/CMake routes both at
+6552 passed / 41 skipped of 6593, the MinGW make route at 6514 / 58 of 6572 (it builds a
+smaller set of test binaries). The 3 Zig-route-only failures this section used to list were
+real bugs, not route quirks, and are fixed:
+
+- `setjmp.c`/`setjmp2.c` (`-ei`): `src/c2mir/x86_64/cx86_64-code.c` registered its corrected
+  `setjmp.h` only for `_MSC_VER`, so a MinGW-headers build kept the real header. Against UCRT
+  (zig's bundled mingw-w64 headers) that spells the call `__intrinsic_setjmpex`, a name
+  `MIR_load_external` does not recognize as setjmp, so the interpreter's special-cased CALL
+  never fired. Now registered for every `_WIN32` build.
+- `jcall.c` (`-eb -eg`, and `-el`): the Windows lazy-function-generation wrapper
+  (`_MIR_get_wrapper`/`_MIR_get_wrapper_end` in `src/mir-x86_64.c`) homed the incoming int args
+  into the *caller's* shadow space at `[rsp+8..rsp+0x28)`, which is only where it lands for a
+  callee reached by a `call`. `MIR_JCALL` reaches its target with a plain `jmp`, so the r9 slot
+  fell one qword past the shadow area -- onto the caller's saved `rbp`. It now spills into a
+  frame of its own below the entry `rsp`, like the bb wrapper's `save_pat2` already does.
 
 ## Zig (`build.zig`, repo root)
 

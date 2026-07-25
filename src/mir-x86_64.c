@@ -714,15 +714,28 @@ void *_MIR_get_wrapper (MIR_context_t ctx, MIR_item_t called_func, void *hook_ad
   };
   size_t call_func_offset = 4, ctx_offset = 14, hook_offset = 24, rel32_offset = 33;
 #else
+  /* Spill the incoming int args into a frame of our own (strictly below the entry
+     rsp), not into the caller's shadow space at [rsp+8..rsp+0x28).  That homing is
+     only right for a callee reached by a `call`, which puts the return address at
+     [rsp]; a function reached by MIR_JCALL is reached by a plain `jmp` (its two
+     patterns in mir-gen-x86_64.c's insn table are `jmp *rel32(rip)`/`jmp *r`, and
+     the caller still allocates the 0x20 shadow area before it), so the shadow space
+     starts at [rsp] and the r9 slot at
+     [rsp+0x20] is the caller's own frame -- for a MIR-generated caller, exactly the
+     slot its prologue put the saved rbp in.  The epilogue then reloaded rbp from a
+     spilled r9, and every later rbp-relative access ran on a bogus frame pointer.
+     Building our own frame is entry-shape independent, and matches what save_pat2
+     already does for the bb wrapper.  The restore + `add` is in wrap_end below. */
   static const uint8_t start_pat[] = {
-    0x48, 0x89, 0x4c, 0x24, 0x08,                /* mov  %rcx,0x08(%rsp) */
-    0x48, 0x89, 0x54, 0x24, 0x10,                /* mov  %rdx,0x10(%rsp) */
+    0x48, 0x83, 0xec, 0x40,                      /* sub    $0x40,%rsp         */
+    0x48, 0x89, 0x0c, 0x24,                      /* mov    %rcx,(%rsp)        */
+    0x48, 0x89, 0x54, 0x24, 0x08,                /* mov    %rdx,0x08(%rsp)    */
     0x48, 0xba, 0,    0,    0,    0, 0, 0, 0, 0, /* movabs called_func,%rdx   */
     0x48, 0xb9, 0,    0,    0,    0, 0, 0, 0, 0, /* movabs ctx,%rcx           */
     0x49, 0xba, 0,    0,    0,    0, 0, 0, 0, 0, /* movabs <hook_address>,%r10*/
     0xe9, 0,    0,    0,    0,                   /* 0x0: jmp rel32 */
   };
-  size_t call_func_offset = 12, ctx_offset = 22, hook_offset = 32, rel32_offset = 41;
+  size_t call_func_offset = 15, ctx_offset = 25, hook_offset = 35, rel32_offset = 44;
 #endif
   uint8_t *addr;
   VARR (uint8_t) * code;
@@ -785,16 +798,19 @@ void *_MIR_get_wrapper_end (MIR_context_t ctx) {
     0x41, 0xff, 0xe2,                   /*jmpq   *%r10			   */
   };
 #else
+  /* Entered from start_pat above with its 0x40-byte spill frame already allocated
+     and rcx/rdx saved at [rsp]/[rsp+8]; r8/r9 go at [rsp+0x10]/[rsp+0x18].  rbp
+     anchors the hook call so rsp can be aligned dynamically (entry rsp is 0 mod 16
+     for a framed function and 8 for a frameless leaf), and the frame is popped just
+     before jumping to the generated code. */
   static const uint8_t wrap_end[] = {
-    0x4c, 0x89, 0x44, 0x24, 0x18,       /*mov  %r8, 0x18(%rsp) */
-    0x4c, 0x89, 0x4c, 0x24, 0x20,       /*mov  %r9, 0x20(%rsp) */
+    0x4c, 0x89, 0x44, 0x24, 0x10,       /*mov  %r8, 0x10(%rsp) */
+    0x4c, 0x89, 0x4c, 0x24, 0x18,       /*mov  %r9, 0x18(%rsp) */
     0x50,                               /*push %rax               */
     0x55,                               /*push %rbp */
     0x48, 0x89, 0xe5,                   /*mov %rsp,%rbp */
-    0x48, 0x89, 0xe0,                   /*mov    %rsp,%rax */
-    0x48, 0x83, 0xe0, 0x0f,             /*and    $0xf,%rax */
-    0x48, 0x05, 0x40, 0,    0,    0,    /*add    $0x40,%rax */
-    0x48, 0x29, 0xc4,                   /*sub    %rax,%rsp -- 16-aligned now */
+    0x48, 0x83, 0xe4, 0xf0,             /*and    $-16,%rsp -- 16-aligned now */
+    0x48, 0x83, 0xec, 0x40,             /*sub    $0x40,%rsp -- shadow + xmm area */
     0x66, 0x0f, 0xd6, 0x44, 0x24, 0x20, /*movq   %xmm0,0x20(%rsp) */
     0x66, 0x0f, 0xd6, 0x4c, 0x24, 0x28, /*movq   %xmm1,0x28(%rsp) */
     0x66, 0x0f, 0xd6, 0x54, 0x24, 0x30, /*movq   %xmm2,0x30(%rsp) */
@@ -808,10 +824,11 @@ void *_MIR_get_wrapper_end (MIR_context_t ctx) {
     0x48, 0x89, 0xec,                   /*mov    %rbp,%rsp */
     0x5d,                               /*pop    %rbp */
     0x58,                               /*pop    %rax               */
-    0x48, 0x8b, 0x4c, 0x24, 0x08,       /*mov  0x08(%rsp),%rcx */
-    0x48, 0x8b, 0x54, 0x24, 0x10,       /*mov  0x10(%rsp),%rdx */
-    0x4c, 0x8b, 0x44, 0x24, 0x18,       /*mov  0x18(%rsp),%r8  */
-    0x4c, 0x8b, 0x4c, 0x24, 0x20,       /*mov  0x20(%rsp),%r9  */
+    0x48, 0x8b, 0x0c, 0x24,             /*mov  (%rsp),%rcx */
+    0x48, 0x8b, 0x54, 0x24, 0x08,       /*mov  0x08(%rsp),%rdx */
+    0x4c, 0x8b, 0x44, 0x24, 0x10,       /*mov  0x10(%rsp),%r8  */
+    0x4c, 0x8b, 0x4c, 0x24, 0x18,       /*mov  0x18(%rsp),%r9  */
+    0x48, 0x83, 0xc4, 0x40,             /*add    $0x40,%rsp */
     0x41, 0xff, 0xe2,                   /*jmpq   *%r10			   */
   };
 #endif
