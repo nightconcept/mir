@@ -68,14 +68,20 @@ utility/interp/gen tests, `mir-bin-run-test`, the full `c2m` C-tests battery
 fine on macOS arm64 despite an earlier, overly-cautious skip there.
 
 ```sh
-make -C src test-all interp-test gen-test         # build everything run_tests.py needs (Linux/macOS)
+make -C src test-bins                             # build everything run_tests.py needs, nothing else (Linux/macOS)
 python3 scripts/run_tests.py --build-dir src      # against that in-place build
 python3 scripts/run_tests.py --build-dir build    # against a CMake build/ directory
 python3 scripts/run_tests.py --build-dir zig-out  # against a `zig build` output tree
 ```
 
-Note `test-all` alone doesn't build the `interp-test`/`gen-test` binaries (those are separate
-GNUmakefile aggregate targets `test`/`test-all` don't depend on) — CI builds both explicitly.
+`test-bins` is a build-only aggregate target: each of its prerequisites is the underlying
+binary (e.g. `$(BUILD_DIR)/adt-tests/varr-test$(EXE)`), not the matching phony target (e.g.
+`varr-test`) that also executes it — so `make test-bins` compiles every binary
+`scripts/run_tests.py` looks for without running any of them or pulling in GNUmakefile's own
+`c2mir-full-test`/bootstrap recipes (reached via `test-all`'s `test` -> `c2mir-test`
+dependency), which `run_tests.py` re-runs itself. `test`/`test-all`/`interp-test`/`gen-test`
+still build *and run* each target's own recipe, for local dev use (`just test`/`just
+test-all`).
 
 Because GNUmakefile, `src/CMakeLists.txt`, and `build.zig`/`test/tests.json` sometimes name the
 same test binary differently (e.g. `varr-test` vs. CMake's `varr_test`, or the 4 `gen-*` cases
@@ -85,10 +91,11 @@ tables rather than any build file being renamed — GNUmakefile stays upstream-c
 other two are left alone to minimize churn. New test binaries should just use the GNUmakefile
 binary name directly (no alias needed) unless there's a reason to match an existing convention.
 
-CI still runs the native build first on each platform (`make -C src test-all` / `cmake --build` /
-`zig build`) before handing off to `run_tests.py` — on Linux/macOS the make route incidentally
-also runs GNUmakefile's own test recipes as a fast native pre-check, but `run_tests.py`'s exit
-code is what CI treats as authoritative for the broad suite on all 3 build routes.
+CI still runs the native build first on each platform (`make -C src test-bins` / `cmake --build` /
+`zig build`) before handing off to `run_tests.py` — on Linux/macOS this is a pure build step
+(`test-bins` only compiles binaries, it doesn't execute any of them or GNUmakefile's own test
+recipes), so `run_tests.py`'s exit code is the only thing that runs and gates the broad suite
+on all 3 build routes.
 
 **Known gaps** (documented, not silently missing) vs. GNUmakefile's full `test-all`: the
 `l2m` tests (need `clang` to emit LLVM bitcode) and a few less-common bootstrap variants

@@ -26,10 +26,10 @@ jobs:
       uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
     - name: Build (Make)
       if: runner.os != 'Windows'
-      # test-all doesn't pull in interp-test/gen-test -- those are separate aggregate
-      # targets scripts/run_tests.py also needs binaries from (interp-test1..16,
-      # gen-test1..16, gen-loop-test, gen-sieve-test, gen-issue219-test, etc.)
-      run: make -C src test-all interp-test gen-test
+      # test-bins only builds the binaries scripts/run_tests.py needs (it does not run
+      # them, and does not pull in GNUmakefile's own c2m C-tests/bootstrap recipes --
+      # run_tests.py runs that same broad suite itself in the step below).
+      run: make -C src test-bins
     - name: Set up MSVC dev environment
       if: runner.os == 'Windows'
       uses: ilammy/msvc-dev-cmd@0b201ec74fa43914dc39ae48a89fd1d8cb592756 # v1.13.0
