@@ -5,6 +5,13 @@
 
 #include "mir-gen.h"
 
+#if defined(_MSC_VER) && !defined(__clang__)
+#include <intrin.h>
+#define RETURN_ADDRESS() _ReturnAddress ()
+#else
+#define RETURN_ADDRESS() __builtin_return_address (0)
+#endif
+
 #define HEAP_SIZE 64
 #define MAX_SAVED_VISITS 8
 
@@ -71,7 +78,7 @@ static void mark_root (void *root_addr, void *data MIR_UNUSED) {
 }
 
 void mock_gc_collect_at_safepoint (void) {
-  void *return_pc = __builtin_return_address (0);
+  void *return_pc = RETURN_ADDRESS ();
   void *frame_base = NULL; /* generated code publishes the MIR frame base itself */
 
   for (size_t i = 0; i < HEAP_SIZE; i++) heap[i].marked = 0;
@@ -84,7 +91,7 @@ void mock_gc_collect_at_safepoint (void) {
 }
 
 void mock_gc_collect_arg_at_safepoint (uintptr_t arg MIR_UNUSED) {
-  void *return_pc = __builtin_return_address (0);
+  void *return_pc = RETURN_ADDRESS ();
   void *frame_base = NULL; /* generated code publishes the MIR frame base itself */
 
   for (size_t i = 0; i < HEAP_SIZE; i++) heap[i].marked = 0;
