@@ -161,6 +161,13 @@ L2M_EXE += $(BUILD_DIR)/l2m$(EXE)
 L2M_TEST += l2m-test$(EXE)
 endif
 
+# dump-code-security-test exercises symlink/PATH-hijack scenarios via POSIX-only
+# APIs (mkdtemp, symlink, chmod) and has no Windows equivalent.
+DUMP_CODE_SECURITY_TEST_BIN=
+ifneq ($(OS),Windows_NT)
+DUMP_CODE_SECURITY_TEST_BIN += $(BUILD_DIR)/mir-tests/dump-code-security-test$(EXE)
+endif
+
 EXECUTABLES=$(BUILD_DIR)/c2m$(EXE) $(BUILD_DIR)/m2b$(EXE) $(BUILD_DIR)/b2m$(EXE) $(BUILD_DIR)/b2ctab$(EXE) $(L2M_EXE) $(BUILD_DIR)/mir-bin-run$(EXE)
 
 Q=@
@@ -231,6 +238,7 @@ test-bins: $(BUILD_DIR)/adt-tests/varr-test$(EXE) $(BUILD_DIR)/adt-tests/dlist-t
            $(BUILD_DIR)/adt-tests/reduce-test$(EXE)\
            $(BUILD_DIR)/mir-tests/simplify-test$(EXE) $(BUILD_DIR)/mir-tests/scan-test$(EXE)\
            $(BUILD_DIR)/mir-tests/io-test$(EXE) $(BUILD_DIR)/mir-tests/mir2c-test$(EXE)\
+           $(DUMP_CODE_SECURITY_TEST_BIN)\
            $(BUILD_DIR)/mir-tests/readme-example-test$(EXE)\
            $(BUILD_DIR)/mir-tests/interp-test1$(EXE) $(BUILD_DIR)/mir-tests/interp-test2$(EXE)\
            $(BUILD_DIR)/mir-tests/interp-test3$(EXE) $(BUILD_DIR)/mir-tests/interp-test4$(EXE)\
@@ -238,6 +246,7 @@ test-bins: $(BUILD_DIR)/adt-tests/varr-test$(EXE) $(BUILD_DIR)/adt-tests/dlist-t
            $(BUILD_DIR)/mir-tests/interp-test7$(EXE)\
            $(BUILD_DIR)/mir-tests/gen-loop-test$(EXE) $(BUILD_DIR)/mir-tests/gen-sieve-test$(EXE)\
            $(BUILD_DIR)/mir-tests/issue219$(EXE) $(BUILD_DIR)/mir-tests/gen-get-thunk-addr-test$(EXE)\
+           $(BUILD_DIR)/mir-tests/gc-mock-test$(EXE)\
            $(BUILD_DIR)/run-test$(EXE)\
            $(BUILD_DIR)/c2m$(EXE) $(BUILD_DIR)/mir-bin-run$(EXE)
 
@@ -434,7 +443,7 @@ clean-mir-tests: clean-mir-utility-tests clean-mir-interp-tests clean-mir-gen-te
 
 # ------------------ MIR utility tests ------------------------
 
-.PHONY: simplify-test scan-test io-test clean-mir-utility-tests
+.PHONY: simplify-test scan-test io-test dump-code-security-test clean-mir-utility-tests
 
 simplify-test: $(BUILD_DIR)/mir-tests/simplify-test$(EXE)
 	$(BUILD_DIR)/mir-tests/simplify-test$(EXE)
@@ -463,10 +472,16 @@ io-test: $(BUILD_DIR)/mir-tests/io-test$(EXE)
 $(BUILD_DIR)/mir-tests/io-test$(EXE): $(BUILD_DIR)/mir.$(OBJSUFF) $(TEST_DIR)/mir-tests/io.c | $(BUILD_DIR)/mir-tests
 	$(COMPILE_AND_LINK) $^ $(EXEO)$(BUILD_DIR)/mir-tests/io-test$(EXE) $(LDLIBS)
 
+dump-code-security-test: $(BUILD_DIR)/mir-tests/dump-code-security-test$(EXE)
+
+$(BUILD_DIR)/mir-tests/dump-code-security-test$(EXE): $(BUILD_DIR)/mir.$(OBJSUFF) $(TEST_DIR)/mir-tests/dump-code-security.c | $(BUILD_DIR)/mir-tests
+	$(COMPILE_AND_LINK) $^ $(EXEO)$(BUILD_DIR)/mir-tests/dump-code-security-test$(EXE) $(LDLIBS)
+
 clean-mir-utility-tests:
 	$(RM) $(BUILD_DIR)/run-test$(EXE) $(BUILD_DIR)/mir-tests/simplify-test$(EXE)
 	$(RM) $(BUILD_DIR)/hello-test$(EXE)
 	$(RM) $(BUILD_DIR)/mir-tests/scan-test$(EXE) $(BUILD_DIR)/mir-tests/io-test$(EXE)
+	$(RM) $(BUILD_DIR)/mir-tests/dump-code-security-test$(EXE)
 
 # ------------------ MIR interp tests --------------------------
 
@@ -561,11 +576,11 @@ clean-mir-interp-tests:
 # ------------------ MIR gen tests --------------------------
 
 .PHONY: clean-mir-gen-tests
-.PHONY: gen-test gen-test-loop gen-test-sieve gen-issue219-test gen-test-get-thunk-addr
+.PHONY: gen-test gen-test-loop gen-test-sieve gen-issue219-test gen-test-get-thunk-addr gc-mock-test
 .PHONY: gen-test1 gen-test2 gen-test3 gen-test4 gen-test5 gen-test6 gen-test7
 .PHONY: gen-test8 gen-test9 gen-test10 gen-test11 gen-test12 gen-test13 gen-test14 gen-test15 gen-test16
 
-gen-test: gen-test-loop gen-test-sieve gen-test-get-thunk-addr gen-issue219-test gen-test1 gen-test2 gen-test3 gen-test4 gen-test5 gen-test6 gen-test7\
+gen-test: gen-test-loop gen-test-sieve gen-test-get-thunk-addr gen-issue219-test gc-mock-test gen-test1 gen-test2 gen-test3 gen-test4 gen-test5 gen-test6 gen-test7\
           gen-test8 gen-test9 gen-test10 gen-test11 gen-test12 gen-test13 gen-test14 gen-test15 gen-test16
 
 gen-test-loop: $(BUILD_DIR)/mir-tests/gen-loop-test$(EXE)
@@ -591,6 +606,11 @@ gen-test-get-thunk-addr: $(BUILD_DIR)/mir-tests/gen-get-thunk-addr-test$(EXE)
 
 $(BUILD_DIR)/mir-tests/gen-get-thunk-addr-test$(EXE): $(BUILD_DIR)/mir.$(OBJSUFF) $(BUILD_DIR)/mir-gen.$(OBJSUFF) $(TEST_DIR)/mir-tests/get-thunk-addr.c | $(BUILD_DIR)/mir-tests
 	$(COMPILE_AND_LINK) $^ $(LDLIBS) $(EXEO)$(BUILD_DIR)/mir-tests/gen-get-thunk-addr-test$(EXE)
+
+gc-mock-test: $(BUILD_DIR)/mir-tests/gc-mock-test$(EXE)
+
+$(BUILD_DIR)/mir-tests/gc-mock-test$(EXE): $(BUILD_DIR)/mir.$(OBJSUFF) $(BUILD_DIR)/mir-gen.$(OBJSUFF) $(TEST_DIR)/mir-tests/gc-mock-test.c | $(BUILD_DIR)/mir-tests
+	$(COMPILE_AND_LINK) $^ $(LDLIBS) $(EXEO)$(BUILD_DIR)/mir-tests/gc-mock-test$(EXE)
 
 gen-test1: $(BUILD_DIR)/run-test$(EXE)
 	$(BUILD_DIR)/run-test$(EXE) -d $(TEST_DIR)/mir-tests/test1.mir

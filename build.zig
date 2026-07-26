@@ -79,6 +79,7 @@ const AdtOrUtilityCase = struct {
     name: []const u8,
     source: []const u8,
     run_args: []const []const u8 = &.{},
+    skip_on_windows: bool = false,
 };
 
 const DefineCase = struct {
@@ -162,6 +163,7 @@ fn addManifestTests(
     }
 
     for (manifest.mir_utility_tests) |case| {
+        if (case.skip_on_windows and is_windows) continue;
         const exe = addManifestTestExe(b, target, optimize, core_lib, case.name, case.source, &.{});
         b.installArtifact(exe);
         const run = b.addRunArtifact(exe);

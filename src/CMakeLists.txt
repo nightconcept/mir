@@ -171,6 +171,15 @@ add_test(simplify-test simplify_test)
 add_test(scan-test scan_test)
 add_test(io-test io_test)
 
+# dump-code-security-test exercises symlink/PATH-hijack scenarios via POSIX-only
+# APIs (mkdtemp, symlink, chmod) and has no Windows equivalent.
+if(NOT WIN32)
+  add_executable (dump-code-security-test "${TEST_DIR}/mir-tests/dump-code-security.c")
+  target_include_directories(dump-code-security-test PRIVATE ${PROJECT_SOURCE_DIR})
+  target_link_libraries(dump-code-security-test mir)
+  add_test(dump-code-security-test dump-code-security-test)
+endif()
+
 # ------------------ Common for MIR tests ----------------------
 add_executable (run_test "${TEST_DIR}/mir-tests/run-test.c")
 target_include_directories(run_test PRIVATE ${PROJECT_SOURCE_DIR})
@@ -280,8 +289,13 @@ add_executable (gen-get-thunk-addr-test "${TEST_DIR}/mir-tests/get-thunk-addr.c"
 target_include_directories(gen-get-thunk-addr-test PRIVATE ${PROJECT_SOURCE_DIR})
 target_link_libraries(gen-get-thunk-addr-test mir)
 
+add_executable (gc-mock-test "${TEST_DIR}/mir-tests/gc-mock-test.c")
+target_include_directories(gc-mock-test PRIVATE ${PROJECT_SOURCE_DIR})
+target_link_libraries(gc-mock-test mir)
+
 add_test(gen-issue219-test issue219)
 add_test(gen-test-get-thunk-addr gen-get-thunk-addr-test)
+add_test(gc-mock-test gc-mock-test)
 
 # ------------------ readme example test ----------------
 

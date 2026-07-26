@@ -94,7 +94,6 @@
 #include <inttypes.h>
 
 #include <assert.h>
-#include "mir-code-alloc.h"
 #include "mir-alloc.h"
 
 #define gen_assert(cond) assert (cond)
@@ -130,6 +129,8 @@ static void setup_call_hard_reg_args (gen_ctx_t gen_ctx, MIR_insn_t call_insn, M
 static uint64_t get_ref_value (gen_ctx_t gen_ctx, const MIR_op_t *ref_op);
 static void gen_setup_lrefs (gen_ctx_t gen_ctx, uint8_t *func_code);
 static int64_t gen_int_log2 (int64_t i);
+static void gen_record_gc_safepoint_offset (gen_ctx_t gen_ctx, MIR_insn_t call_insn,
+                                            size_t code_offset, size_t return_pc_offset);
 
 #define SWAP(v1, v2, temp) \
   do {                     \
@@ -359,6 +360,92 @@ struct bb_stub {
 
 static void MIR_NO_RETURN util_error (gen_ctx_t gen_ctx, const char *message) {
   (*MIR_get_error_func (gen_ctx->ctx)) (MIR_alloc_error, message);
+}
+
+#if defined(__clang__) || defined(__GNUC__)
+static char machine_code_in_progress_marker;
+static char call_addr_in_progress_marker;
+
+static void *load_machine_code_atomic (MIR_func_t func) {
+  return __atomic_load_n (&func->machine_code, __ATOMIC_ACQUIRE);
+}
+
+static void store_machine_code_atomic (MIR_func_t func, void *machine_code) {
+  __atomic_store_n (&func->machine_code, machine_code, __ATOMIC_RELEASE);
+}
+
+static int claim_machine_code_generation_atomic (MIR_func_t func) {
+  void *expected = NULL;
+
+  return __atomic_compare_exchange_n (&func->machine_code, &expected, &machine_code_in_progress_marker,
+                                      FALSE, __ATOMIC_ACQ_REL, __ATOMIC_ACQUIRE);
+}
+
+static void *load_call_addr_atomic (MIR_func_t func) {
+  return __atomic_load_n (&func->call_addr, __ATOMIC_ACQUIRE);
+}
+
+static void store_call_addr_atomic (MIR_func_t func, void *call_addr) {
+  __atomic_store_n (&func->call_addr, call_addr, __ATOMIC_RELEASE);
+}
+
+static int claim_call_addr_generation_atomic (MIR_func_t func) {
+  void *expected = NULL;
+
+  return __atomic_compare_exchange_n (&func->call_addr, &expected, &call_addr_in_progress_marker,
+                                      FALSE, __ATOMIC_ACQ_REL, __ATOMIC_ACQUIRE);
+}
+#else
+static char machine_code_in_progress_marker;
+static char call_addr_in_progress_marker;
+
+static void *load_machine_code_atomic (MIR_func_t func) { return func->machine_code; }
+
+static void store_machine_code_atomic (MIR_func_t func, void *machine_code) {
+  func->machine_code = machine_code;
+}
+
+static int claim_machine_code_generation_atomic (MIR_func_t func) {
+  if (func->machine_code != NULL) return FALSE;
+  func->machine_code = &machine_code_in_progress_marker;
+  return TRUE;
+}
+
+static void *load_call_addr_atomic (MIR_func_t func) { return func->call_addr; }
+
+static void store_call_addr_atomic (MIR_func_t func, void *call_addr) { func->call_addr = call_addr; }
+
+static int claim_call_addr_generation_atomic (MIR_func_t func) {
+  if (func->call_addr != NULL) return FALSE;
+  func->call_addr = &call_addr_in_progress_marker;
+  return TRUE;
+}
+#endif
+
+static int machine_code_generation_in_progress_p (void *machine_code) {
+  return machine_code == &machine_code_in_progress_marker;
+}
+
+static int call_addr_generation_in_progress_p (void *call_addr) {
+  return call_addr == &call_addr_in_progress_marker;
+}
+
+static void *wait_for_machine_code_generation (MIR_func_t func) {
+  void *machine_code;
+
+  do {
+    machine_code = load_machine_code_atomic (func);
+  } while (machine_code_generation_in_progress_p (machine_code));
+  return machine_code;
+}
+
+static void *wait_for_call_addr_generation (MIR_func_t func) {
+  void *call_addr;
+
+  do {
+    call_addr = load_call_addr_atomic (func);
+  } while (call_addr_generation_in_progress_p (call_addr));
+  return call_addr;
 }
 
 static MIR_alloc_t gen_alloc (gen_ctx_t gen_ctx) { return MIR_get_alloc (gen_ctx->ctx); }
@@ -1946,7 +2033,7 @@ static void solve_dataflow (gen_ctx_t gen_ctx, int forward_p, void (*con_func_0)
   while (VARR_LENGTH (bb_t, worklist) != 0) {
     VARR_TRUNC (bb_t, pending, 0);
     addr = VARR_ADDR (bb_t, worklist);
-    qsort (addr, VARR_LENGTH (bb_t, worklist), sizeof (bb), forward_p ? rpost_cmp : post_cmp);
+    qsort (addr, VARR_LENGTH (bb_t, worklist), sizeof (*addr), forward_p ? rpost_cmp : post_cmp);
     bitmap_clear (bb_to_consider);
     for (i = 0; i < VARR_LENGTH (bb_t, worklist); i++) {
       int changed_p = iter == 0;
@@ -2534,7 +2621,8 @@ static MIR_reg_t get_new_reg (gen_ctx_t gen_ctx, MIR_reg_t old_reg, int sep, siz
   VARR_TRUNC (char, reg_name, 0);
   VARR_PUSH_ARR (char, reg_name, name, strlen (name));
   VARR_PUSH (char, reg_name, sep);
-  sprintf (ind_str, "%lu", (unsigned long) index); /* ??? should be enough to unique */
+  snprintf (ind_str, sizeof (ind_str), "%lu",
+            (unsigned long) index); /* ??? should be enough to unique */
   VARR_PUSH_ARR (char, reg_name, ind_str, strlen (ind_str) + 1);
   if (hard_reg_name == NULL) {
     new_reg = MIR_new_func_reg (ctx, func, type, VARR_ADDR (char, reg_name)) + MAX_HARD_REG;
@@ -3590,6 +3678,7 @@ static int multi_out_insn_p (MIR_insn_t insn) {
 static MIR_type_t canonic_mem_type (MIR_type_t type) {
   switch (type) {
   case MIR_T_U64: return MIR_T_I64;
+  case MIR_T_GC: return MIR_T_I64;
 #ifdef MIR_PTR32
   case MIR_T_P: return MIR_T_I32;
 #else
@@ -5006,11 +5095,245 @@ static int alloca_arg_p (gen_ctx_t gen_ctx MIR_UNUSED, MIR_insn_t call_insn) {
   return FALSE;
 }
 
+static int call_has_explicit_mem_gc_roots (MIR_insn_t call_insn) {
+  MIR_call_gc_root_t root;
+
+  for (root = call_insn->gc_roots; root != NULL; root = root->next)
+    if (root->kind == MIR_CALL_GC_ROOT_MEM) return TRUE;
+  return FALSE;
+}
+
+static MIR_call_gc_root_t new_slot_gc_root (gen_ctx_t gen_ctx, MIR_reg_t slot_reg) {
+  MIR_call_gc_root_t root = gen_malloc_and_mark_to_free (gen_ctx, sizeof (struct MIR_call_gc_root));
+
+  root->kind = MIR_CALL_GC_ROOT_SLOT;
+  root->u.reg = slot_reg;
+  root->next = NULL;
+  return root;
+}
+
+static void append_slot_gc_root (MIR_call_gc_root_t *head, MIR_call_gc_root_t *tail,
+                                 MIR_call_gc_root_t root) {
+  if (*tail == NULL) {
+    *head = *tail = root;
+  } else {
+    (*tail)->next = root;
+    *tail = root;
+  }
+}
+
+static MIR_reg_t add_gc_root_slot_store (gen_ctx_t gen_ctx, MIR_insn_t call_insn, MIR_op_t src_op) {
+  MIR_context_t ctx = gen_ctx->ctx;
+  MIR_func_t func = curr_func_item->u.func;
+  MIR_reg_t slot_reg = gen_new_temp_reg (gen_ctx, MIR_T_GC, func);
+  MIR_insn_t mov_insn;
+
+  bitmap_set_bit_p (addr_regs, slot_reg);
+  mov_insn = MIR_new_insn (ctx, MIR_MOV, _MIR_new_var_op (ctx, slot_reg), src_op);
+  gen_add_insn_before (gen_ctx, call_insn, mov_insn);
+  return slot_reg;
+}
+
+/* Publish the canonical frame base (the base register used by
+   target_get_stack_slot_offset) into the context cell read by MIR_visit_gc_roots.  There
+   is no portable way for the C safepoint callee to find its MIR caller's frame pointer
+   (__builtin_frame_address (1) is unsupported for depth > 0 on Win64), so the generated
+   code hands it over explicitly.  */
+static void add_gc_frame_base_publication (gen_ctx_t gen_ctx, MIR_insn_t call_insn) {
+  MIR_context_t ctx = gen_ctx->ctx;
+  MIR_func_t func = curr_func_item->u.func;
+  MIR_reg_t addr_reg = gen_new_temp_reg (gen_ctx, MIR_T_I64, func);
+  MIR_insn_t insn;
+
+  insn = MIR_new_insn (ctx, MIR_MOV, _MIR_new_var_op (ctx, addr_reg),
+                       MIR_new_uint_op (ctx, (uint64_t) (uintptr_t) _MIR_gc_frame_base_addr (ctx)));
+  gen_add_insn_before (gen_ctx, call_insn, insn);
+  insn = MIR_new_insn (ctx, MIR_MOV,
+                       _MIR_new_var_mem_op (ctx, MIR_T_I64, 0, addr_reg, MIR_NON_VAR, 1),
+                       _MIR_new_var_op (ctx, FP_HARD_REG));
+  gen_add_insn_before (gen_ctx, call_insn, insn);
+}
+
+static size_t lower_explicit_gc_roots (gen_ctx_t gen_ctx, MIR_insn_t call_insn,
+                                       MIR_call_gc_root_t *head,
+                                       MIR_call_gc_root_t *tail,
+                                       bitmap_t rooted_gc_vars) {
+  MIR_context_t ctx = gen_ctx->ctx;
+  MIR_call_gc_root_t root;
+  size_t nroots = 0;
+
+  for (root = call_insn->gc_roots; root != NULL; root = root->next) {
+    if (root->kind == MIR_CALL_GC_ROOT_REG) {
+      MIR_reg_t var = root->u.reg + MAX_HARD_REG;
+      MIR_reg_t slot_reg
+        = add_gc_root_slot_store (gen_ctx, call_insn, _MIR_new_var_op (ctx, var));
+      append_slot_gc_root (head, tail, new_slot_gc_root (gen_ctx, slot_reg));
+      bitmap_set_bit_p (rooted_gc_vars, var);
+      nroots++;
+    } else if (root->kind == MIR_CALL_GC_ROOT_MEM) {
+      for (size_t i = 0; i < root->u.mem.count; i++) {
+        MIR_disp_t disp = root->u.mem.disp + (MIR_disp_t) i * root->u.mem.stride;
+        MIR_op_t mem_op = _MIR_new_var_mem_op (ctx, root->u.mem.type, disp,
+                                               root->u.mem.base_reg + MAX_HARD_REG, MIR_NON_VAR,
+                                               1);
+        MIR_reg_t slot_reg = add_gc_root_slot_store (gen_ctx, call_insn, mem_op);
+        append_slot_gc_root (head, tail, new_slot_gc_root (gen_ctx, slot_reg));
+        nroots++;
+      }
+    }
+  }
+  return nroots;
+}
+
+static size_t lower_call_arg_gc_roots (gen_ctx_t gen_ctx, MIR_insn_t call_insn,
+                                       MIR_call_gc_root_t *head,
+                                       MIR_call_gc_root_t *tail,
+                                       bitmap_t rooted_gc_vars) {
+  MIR_context_t ctx = gen_ctx->ctx;
+  MIR_func_t func = curr_func_item->u.func;
+  MIR_proto_t proto;
+  size_t arg_start, proto_args_num, nroots = 0;
+
+  gen_assert ((call_insn->code == MIR_CALL || call_insn->code == MIR_INLINE)
+              && call_insn->ops[0].mode == MIR_OP_REF
+              && call_insn->ops[0].u.ref->item_type == MIR_proto_item);
+  proto = call_insn->ops[0].u.ref->u.proto;
+  arg_start = 2 + proto->nres;
+  proto_args_num = proto->args == NULL ? 0 : VARR_LENGTH (MIR_var_t, proto->args);
+  for (size_t i = arg_start; i < call_insn->nops; i++) {
+    MIR_op_t op = call_insn->ops[i];
+    size_t arg_num = i - arg_start;
+    int gc_arg_p = arg_num < proto_args_num
+                     && VARR_GET (MIR_var_t, proto->args, arg_num).type == MIR_T_GC;
+    int gc_op_p = FALSE;
+
+    if (op.mode == MIR_OP_VAR) {
+      MIR_reg_t var = op.u.var;
+
+      gc_op_p = var > MAX_HARD_REG && MIR_reg_type (ctx, var - MAX_HARD_REG, func) == MIR_T_GC;
+    } else if (op.mode == MIR_OP_VAR_MEM) {
+      gc_op_p = op.u.var_mem.type == MIR_T_GC;
+    }
+    if (!gc_arg_p && !gc_op_p) continue;
+    if (op.mode == MIR_OP_REG) {
+      append_slot_gc_root (head, tail,
+                           new_slot_gc_root (gen_ctx, add_gc_root_slot_store (gen_ctx, call_insn,
+                                                                              op)));
+      nroots++;
+    } else if (op.mode == MIR_OP_VAR) {
+      MIR_reg_t var = op.u.var;
+
+      if (var > MAX_HARD_REG && bitmap_bit_p (rooted_gc_vars, var))
+        continue;
+      append_slot_gc_root (head, tail,
+                           new_slot_gc_root (gen_ctx, add_gc_root_slot_store (gen_ctx, call_insn,
+                                                                              op)));
+      if (var > MAX_HARD_REG) bitmap_set_bit_p (rooted_gc_vars, var);
+      nroots++;
+    } else if (op.mode == MIR_OP_VAR_MEM && op.u.var_mem.type == MIR_T_GC) {
+      append_slot_gc_root (head, tail,
+                           new_slot_gc_root (gen_ctx, add_gc_root_slot_store (gen_ctx, call_insn,
+                                                                              op)));
+      nroots++;
+    }
+  }
+  return nroots;
+}
+
+static size_t lower_live_gc_roots (gen_ctx_t gen_ctx, MIR_insn_t call_insn, bitmap_t live,
+                                   MIR_call_gc_root_t *head, MIR_call_gc_root_t *tail,
+                                   bitmap_t rooted_gc_vars) {
+  MIR_context_t ctx = gen_ctx->ctx;
+  MIR_func_t func = curr_func_item->u.func;
+  bitmap_iterator_t bi;
+  size_t nel, nroots = 0;
+
+  FOREACH_BITMAP_BIT (bi, live, nel) {
+    MIR_reg_t reg = (MIR_reg_t) nel, slot_reg;
+
+    if (reg <= MAX_HARD_REG) continue;
+    if (bitmap_bit_p (rooted_gc_vars, reg)) continue;
+    if (MIR_reg_type (ctx, reg - MAX_HARD_REG, func) != MIR_T_GC) continue;
+    slot_reg = add_gc_root_slot_store (gen_ctx, call_insn, _MIR_new_var_op (ctx, reg));
+    append_slot_gc_root (head, tail, new_slot_gc_root (gen_ctx, slot_reg));
+    nroots++;
+  }
+  return nroots;
+}
+
+static void update_liveness_before_insn (gen_ctx_t gen_ctx, MIR_insn_t insn, bitmap_t live) {
+  MIR_reg_t var, early_clobbered_hard_reg1, early_clobbered_hard_reg2;
+  int op_num;
+  insn_var_iterator_t insn_var_iter;
+
+  FOREACH_OUT_INSN_VAR (gen_ctx, insn_var_iter, insn, var, op_num) {
+    bitmap_clear_bit_p (live, var);
+  }
+  if (MIR_call_code_p (insn->code)) bitmap_and_compl (live, live, call_used_hard_regs[MIR_T_UNDEF]);
+  FOREACH_IN_INSN_VAR (gen_ctx, insn_var_iter, insn, var, op_num) {
+    bitmap_set_bit_p (live, var);
+  }
+  target_get_early_clobbered_hard_regs (insn, &early_clobbered_hard_reg1,
+                                        &early_clobbered_hard_reg2);
+  if (early_clobbered_hard_reg1 != MIR_NON_VAR)
+    bitmap_clear_bit_p (live, early_clobbered_hard_reg1);
+  if (early_clobbered_hard_reg2 != MIR_NON_VAR)
+    bitmap_clear_bit_p (live, early_clobbered_hard_reg2);
+  if (MIR_call_code_p (insn->code)) {
+    bitmap_t reg_args = (optimize_level > 0 ? ((bb_insn_t) insn->data)->call_hard_reg_args
+                                            : ((insn_data_t) insn->data)->u.call_hard_reg_args);
+    if (reg_args != NULL) bitmap_ior (live, live, reg_args);
+  }
+}
+
+static size_t lower_gc_roots (gen_ctx_t gen_ctx) {
+  MIR_alloc_t alloc = gen_alloc (gen_ctx);
+  bitmap_t live = bitmap_create2 (alloc, DEFAULT_INIT_BITMAP_BITS_NUM);
+  bitmap_t rooted_gc_vars = bitmap_create2 (alloc, DEFAULT_INIT_BITMAP_BITS_NUM);
+  bitmap_t call_live = temp_bitmap;
+  MIR_insn_t insn;
+  bb_t bb = NULL;
+  size_t nroots = 0;
+
+  for (insn = DLIST_TAIL (MIR_insn_t, curr_func_item->u.func->insns); insn != NULL;
+       insn = DLIST_PREV (MIR_insn_t, insn)) {
+    bb_t insn_bb = get_insn_bb (gen_ctx, insn);
+
+    if (bb != insn_bb) {
+      bb = insn_bb;
+      bitmap_copy (live, bb->out);
+    }
+    if (MIR_call_code_p (insn->code) && insn->code != MIR_JCALL) {
+      MIR_call_gc_root_t head = NULL, tail = NULL;
+      MIR_reg_t var;
+      int op_num;
+      insn_var_iterator_t insn_var_iter;
+
+      insn->gc_safepoint_index = (size_t) -1;
+      bitmap_copy (call_live, live);
+      FOREACH_OUT_INSN_VAR (gen_ctx, insn_var_iter, insn, var, op_num) {
+        bitmap_clear_bit_p (call_live, var);
+      }
+      bitmap_clear (rooted_gc_vars);
+      nroots += lower_explicit_gc_roots (gen_ctx, insn, &head, &tail, rooted_gc_vars);
+      nroots += lower_call_arg_gc_roots (gen_ctx, insn, &head, &tail, rooted_gc_vars);
+      nroots += lower_live_gc_roots (gen_ctx, insn, call_live, &head, &tail, rooted_gc_vars);
+      insn->gc_roots = head;
+      if (head != NULL) add_gc_frame_base_publication (gen_ctx, insn);
+    }
+    update_liveness_before_insn (gen_ctx, insn, live);
+  }
+  bitmap_destroy (rooted_gc_vars);
+  bitmap_destroy (live);
+  return nroots;
+}
+
 static void update_call_mem_live (gen_ctx_t gen_ctx, bitmap_t mem_live, MIR_insn_t call_insn) {
   gen_assert (MIR_call_code_p (call_insn->code));
   gen_assert (call_insn->ops[0].mode == MIR_OP_REF
               && call_insn->ops[0].u.ref->item_type == MIR_proto_item);
-  if (full_escape_p || alloca_arg_p (gen_ctx, call_insn)) {
+  if (full_escape_p || alloca_arg_p (gen_ctx, call_insn)
+      || call_has_explicit_mem_gc_roots (call_insn)) {
     bitmap_set_bit_range_p (mem_live, 1, VARR_LENGTH (mem_attr_t, mem_attrs));
   } else {
     mem_attr_t *mem_attr_addr = VARR_ADDR (mem_attr_t, mem_attrs);
@@ -6587,7 +6910,8 @@ static void build_live_ranges (gen_ctx_t gen_ctx) {
     for (bb = DLIST_HEAD (bb_t, curr_cfg->bbs); bb != NULL; bb = DLIST_NEXT (bb_t, bb))
       VARR_PUSH (bb_t, worklist, bb);
     if (optimize_level <= 1) /* arrange BBs in PO (post order) for more compact ranges: */
-      qsort (VARR_ADDR (bb_t, worklist), VARR_LENGTH (bb_t, worklist), sizeof (bb), post_cmp);
+      qsort (VARR_ADDR (bb_t, worklist), VARR_LENGTH (bb_t, worklist),
+             sizeof (VARR_ADDR (bb_t, worklist)[0]), post_cmp);
     for (i = 0; i < VARR_LENGTH (bb_t, worklist); i++) {
       bb = VARR_GET (bb_t, worklist, i);
       if (DLIST_HEAD (bb_insn_t, bb->bb_insns) == NULL) continue;
@@ -7276,6 +7600,67 @@ struct ra_ctx {
 #define out_reloads_num gen_ctx->ra_ctx->out_reloads_num
 #define in_reloads gen_ctx->ra_ctx->in_reloads
 #define out_reloads gen_ctx->ra_ctx->out_reloads
+
+static void build_gc_safepoints (gen_ctx_t gen_ctx) {
+  MIR_context_t ctx = gen_ctx->ctx;
+  MIR_func_t func = curr_func_item->u.func;
+  MIR_alloc_t alloc = MIR_get_alloc (ctx);
+  MIR_insn_t insn;
+  size_t safepoints_num = 0, roots_num = 0, curr_sp = 0, curr_root = 0;
+
+  _MIR_clear_gc_safepoints (ctx, func);
+  for (insn = DLIST_HEAD (MIR_insn_t, func->insns); insn != NULL;
+       insn = DLIST_NEXT (MIR_insn_t, insn)) {
+    if (insn->code != MIR_CALL || insn->gc_roots == NULL) continue;
+    safepoints_num++;
+    for (MIR_call_gc_root_t root = insn->gc_roots; root != NULL; root = root->next) roots_num++;
+  }
+  if (safepoints_num == 0) return;
+  func->gc_safepoints = MIR_malloc (alloc, safepoints_num * sizeof (MIR_gc_safepoint_t));
+  func->gc_root_locs = MIR_malloc (alloc, roots_num * sizeof (MIR_gc_root_t));
+  if (func->gc_safepoints == NULL || func->gc_root_locs == NULL) util_error (gen_ctx, "no memory");
+  func->gc_safepoints_num = safepoints_num;
+  func->gc_root_locs_num = roots_num;
+  for (insn = DLIST_HEAD (MIR_insn_t, func->insns); insn != NULL;
+       insn = DLIST_NEXT (MIR_insn_t, insn)) {
+    MIR_gc_safepoint_t *sp;
+    size_t nroots = 0, root_start;
+
+    if (insn->code != MIR_CALL || insn->gc_roots == NULL) continue;
+    insn->gc_safepoint_index = curr_sp;
+    root_start = curr_root;
+    for (MIR_call_gc_root_t root = insn->gc_roots; root != NULL; root = root->next) {
+      MIR_reg_t slot_reg, loc;
+      MIR_disp_t offset;
+
+      gen_assert (root->kind == MIR_CALL_GC_ROOT_SLOT);
+      slot_reg = root->u.reg;
+      loc = VARR_GET (MIR_reg_t, reg_renumber, slot_reg);
+      gen_assert (loc > MAX_HARD_REG);
+      offset = target_get_stack_slot_offset (gen_ctx, MIR_T_GC, loc - MAX_HARD_REG - 1);
+      func->gc_root_locs[curr_root++].frame_offset = offset;
+      nroots++;
+    }
+    sp = &func->gc_safepoints[curr_sp++];
+    sp->code_offset = (size_t) -1;
+    sp->return_pc_offset = (size_t) -1;
+    sp->nroots = nroots;
+    sp->roots = &func->gc_root_locs[root_start];
+  }
+  gen_assert (curr_sp == safepoints_num && curr_root == roots_num);
+}
+
+static void gen_record_gc_safepoint_offset (gen_ctx_t gen_ctx, MIR_insn_t call_insn,
+                                            size_t code_offset, size_t return_pc_offset) {
+  MIR_func_t func = curr_func_item->u.func;
+  size_t index;
+
+  if (call_insn->code != MIR_CALL || call_insn->gc_safepoint_index == (size_t) -1) return;
+  index = call_insn->gc_safepoint_index;
+  gen_assert (index < func->gc_safepoints_num);
+  func->gc_safepoints[index].code_offset = code_offset;
+  func->gc_safepoints[index].return_pc_offset = return_pc_offset;
+}
 
 /* Priority RA */
 
@@ -9291,7 +9676,7 @@ static void dead_code_elimination (gen_ctx_t gen_ctx) {
 static void *print_and_execute_wrapper (gen_ctx_t gen_ctx, MIR_item_t called_func) {
   gen_assert (called_func->item_type == MIR_func_item);
   fprintf (stderr, "Calling %s\n", called_func->u.func->name);
-  return called_func->u.func->machine_code;
+  return load_machine_code_atomic (called_func->u.func);
 }
 #endif
 
@@ -9301,14 +9686,21 @@ static void *generate_func_code (MIR_context_t ctx, MIR_item_t func_item, int ma
   gen_ctx_t gen_ctx = *gen_ctx_loc (ctx);
   uint8_t *code;
   void *machine_code = NULL;
+  void *call_addr;
   size_t code_len = 0;
   double start_time = real_usec_time ();
   uint32_t bbs_num;
 
   gen_assert (func_item->item_type == MIR_func_item && func_item->data == NULL);
-  if (func_item->u.func->machine_code != NULL) {
-    gen_assert (func_item->u.func->call_addr != NULL);
-    _MIR_redirect_thunk (ctx, func_item->addr, func_item->u.func->call_addr);
+  machine_code = load_machine_code_atomic (func_item->u.func);
+  if (machine_code != NULL || !claim_machine_code_generation_atomic (func_item->u.func)) {
+    machine_code = machine_code == NULL ? wait_for_machine_code_generation (func_item->u.func)
+                                        : machine_code;
+    if (machine_code_generation_in_progress_p (machine_code))
+      machine_code = wait_for_machine_code_generation (func_item->u.func);
+    call_addr = wait_for_call_addr_generation (func_item->u.func);
+    gen_assert (call_addr != NULL);
+    _MIR_redirect_thunk (ctx, func_item->addr, call_addr);
     DEBUG (2, {
       fprintf (debug_file, "+++++++++++++The code for %s has been already generated\n",
                MIR_item_name (ctx, func_item));
@@ -9465,8 +9857,15 @@ static void *generate_func_code (MIR_context_t ctx, MIR_item_t func_item, int ma
   }
   consider_all_live_vars (gen_ctx);
   calculate_func_cfg_live_info (gen_ctx, TRUE);
+  size_t gc_roots_num = lower_gc_roots (gen_ctx);
+#if defined(__x86_64__) || defined(_M_AMD64)
+  if (gc_roots_num != 0) prohibit_omitting_fp (gen_ctx);
+#endif
+  consider_all_live_vars (gen_ctx);
+  calculate_func_cfg_live_info (gen_ctx, TRUE);
   print_live_info (gen_ctx, "Live info before RA", optimize_level > 0, TRUE);
   reg_alloc (gen_ctx);
+  build_gc_safepoints (gen_ctx);
   DEBUG (2, {
     fprintf (debug_file, "+++++++++++++MIR after RA:\n");
     print_CFG (gen_ctx, TRUE, FALSE, TRUE, FALSE, NULL);
@@ -9496,16 +9895,19 @@ static void *generate_func_code (MIR_context_t ctx, MIR_item_t func_item, int ma
   });
   if (machine_code_p) {
     code = target_translate (gen_ctx, &code_len);
-    machine_code = func_item->u.func->call_addr = _MIR_publish_code (ctx, code, code_len);
-    target_rebase (gen_ctx, func_item->u.func->call_addr);
+    machine_code = _MIR_publish_code (ctx, code, code_len);
+    call_addr = machine_code;
+    target_rebase (gen_ctx, call_addr);
 #if MIR_GEN_CALL_TRACE
-    func_item->u.func->call_addr = _MIR_get_wrapper (ctx, func_item, print_and_execute_wrapper);
+    call_addr = _MIR_get_wrapper (ctx, func_item, print_and_execute_wrapper);
 #endif
     DEBUG (2, {
       _MIR_dump_code (NULL, machine_code, code_len);
       fprintf (debug_file, "code size = %lu:\n", (unsigned long) code_len);
     });
-    _MIR_redirect_thunk (ctx, func_item->addr, func_item->u.func->call_addr);
+    store_call_addr_atomic (func_item->u.func, call_addr);
+    store_machine_code_atomic (func_item->u.func, machine_code);
+    _MIR_redirect_thunk (ctx, func_item->addr, call_addr);
   }
   if (optimize_level != 0) destroy_loop_tree (gen_ctx, curr_cfg->root_loop_node);
   destroy_func_cfg (gen_ctx);
@@ -9520,8 +9922,6 @@ static void *generate_func_code (MIR_context_t ctx, MIR_item_t func_item, int ma
              (real_usec_time () - start_time) / 1000.0);
   });
   _MIR_restore_func_insns (ctx, func_item);
-  /* ??? We should use atomic here but c2mir does not implement them yet.  */
-  func_item->u.func->machine_code = machine_code;
   return func_item->addr;
 }
 
@@ -9784,18 +10184,31 @@ void MIR_set_gen_interface (MIR_context_t ctx, MIR_item_t func_item) {
 
 /* Lazy func generation is done right away. */
 static void generate_func_and_redirect (MIR_context_t ctx, MIR_item_t func_item, int full_p) {
+  void *addr;
+
+  if (!full_p) {
+    addr = load_call_addr_atomic (func_item->u.func);
+    if (addr != NULL || !claim_call_addr_generation_atomic (func_item->u.func)) {
+      addr = addr == NULL ? wait_for_call_addr_generation (func_item->u.func) : addr;
+      if (call_addr_generation_in_progress_p (addr))
+        addr = wait_for_call_addr_generation (func_item->u.func);
+      gen_assert (addr != NULL);
+      _MIR_redirect_thunk (ctx, func_item->addr, addr);
+      return;
+    }
+  }
   generate_func_code (ctx, func_item, full_p);
   if (full_p) return;
   gen_ctx_t gen_ctx = *gen_ctx_loc (ctx);
-  void *addr;
   create_bb_stubs (gen_ctx);
   (void) get_bb_version (gen_ctx, &((struct bb_stub *) func_item->data)[0], 0, NULL, TRUE, &addr);
+  store_call_addr_atomic (func_item->u.func, addr);
   _MIR_redirect_thunk (ctx, func_item->addr, addr);
 }
 
 static void *generate_func_and_redirect_to_func_code (MIR_context_t ctx, MIR_item_t func_item) {
   generate_func_and_redirect (ctx, func_item, TRUE);
-  return func_item->u.func->machine_code;
+  return load_machine_code_atomic (func_item->u.func);
 }
 
 void MIR_set_lazy_gen_interface (MIR_context_t ctx, MIR_item_t func_item) {

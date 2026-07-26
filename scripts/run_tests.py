@@ -405,11 +405,18 @@ class TestRunner:
         for util in ["simplify-test", "scan-test", "io-test", "readme-example-test", "mir2c-test"]:
             self.record(self.run_executable_test(util))
 
+        # dump-code-security-test exercises symlink/PATH-hijack scenarios via POSIX-only
+        # APIs (mkdtemp, symlink, chmod) and has no Windows equivalent.
+        if IS_WINDOWS:
+            self.record(TestResult("dump-code-security-test", True, "skipped on Windows", skipped=True))
+        else:
+            self.record(self.run_executable_test("dump-code-security-test"))
+
         # 3. Interp & Gen Tests
         for interp in ["interp-test1", "interp-test2", "interp-test3", "interp-test4", "interp-test5", "interp-test6", "interp-test7"]:
             self.record(self.run_executable_test(interp))
 
-        for gen in ["gen-loop-test", "gen-sieve-test", "gen-get-thunk-addr-test", "issue219"]:
+        for gen in ["gen-loop-test", "gen-sieve-test", "gen-get-thunk-addr-test", "issue219", "gc-mock-test"]:
             self.record(self.run_executable_test(gen))
 
         run_test_exe = self.find_binary("run-test")
