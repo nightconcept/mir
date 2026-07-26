@@ -1021,6 +1021,13 @@ MIR_module_t MIR_new_module (MIR_context_t ctx, const char *name) {
   return curr_module;
 }
 
+void MIR_remove_module (MIR_context_t ctx, MIR_module_t module) {
+  if (module == &environment_module)
+    MIR_get_error_func (ctx) (MIR_wrong_param_value_error, "MIR_remove_module: environment module");
+  DLIST_REMOVE (MIR_module_t, all_modules, module);
+  remove_module (ctx, module, TRUE);
+}
+
 DLIST (MIR_module_t) * MIR_get_module_list (MIR_context_t ctx) { return &all_modules; }
 
 static const char *type_str (MIR_context_t ctx, MIR_type_t tp) {
